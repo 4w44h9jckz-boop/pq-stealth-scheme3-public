@@ -6,6 +6,24 @@ namespace Scheme3
 
 variable {Point : Type}
 
+@[simp] theorem result_bind_ok {α β : Type} (a : α) (f : α → Except Error β) :
+    ((Except.ok a : Except Error α) >>= f) = f a := rfl
+
+@[simp] theorem result_bind_error {α β : Type} (e : Error) (f : α → Except Error β) :
+    ((Except.error e : Except Error α) >>= f) = Except.error e := rfl
+
+@[simp] theorem result_map_ok {α β : Type} (a : α) (f : α → β) :
+    f <$> (Except.ok a : Except Error α) = Except.ok (f a) := rfl
+
+@[simp] theorem result_map_error {α β : Type} (e : Error) (f : α → β) :
+    f <$> (Except.error e : Except Error α) = Except.error e := rfl
+
+@[simp] theorem result_pure {α : Type} (a : α) :
+    (pure a : Except Error α) = Except.ok a := rfl
+
+@[simp] theorem result_throw {α : Type} (e : Error) :
+    (throw e : Except Error α) = Except.error e := rfl
+
 theorem scalar_zero_rejected : scalar? 0 = none := by simp [scalar?]
 theorem scalar_order_rejected : scalar? order = none := by simp [scalar?]
 theorem scalar_max_accepted : ∃ s, scalar? (order - 1) = some s := by
@@ -43,7 +61,6 @@ theorem last_candidate (p : Primitives Point) (base : Secret) :
     offsetCandidate p base 256 =
       p.sha256 (dsOffset ++ base.data ++ [(0 : UInt8)]) := by
   simp [offsetCandidate]
-  rfl
 
 theorem no_scalar_search_exhausted :
     firstScalar ([] : List Secret) = none := rfl
@@ -163,7 +180,7 @@ theorem match_sound (p : Primitives Point) (spending : Point)
             some m := by simpa [ho, hp] using h
         split at h'
         · rename_i ha
-          exact ⟨(Option.some.inj h').symm, ht, off, stealth, ho, hp, ha⟩
+          exact ⟨(Option.some.inj h').symm, ht, off, stealth, rfl, rfl, ha⟩
         · simp at h'
   · simp at h
 

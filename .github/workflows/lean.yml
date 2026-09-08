@@ -2,6 +2,7 @@ name: Lean specification
 
 on:
   push:
+    branches: [main]
     paths:
       - 'formal/**'
       - '.github/workflows/lean.yml'
