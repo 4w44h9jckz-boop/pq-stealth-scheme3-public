@@ -31,7 +31,7 @@ source of truth for compilation status. Do not treat a pending build as verified
 | [Scheme3/Base.lean](Scheme3/Base.lean) | Sized byte strings, big-endian scalar decoding, modular addition, hashes' exact input construction, offset search, primitive interfaces and EC proof obligations |
 | [Scheme3/Protocol.lean](Scheme3/Protocol.lean) | Raw seed parsing, keygen, delegation guard, meta-address decoding, scanner binding, sender, event codec, scanning, spending and wallet obligations |
 | [Scheme3/Proofs.lean](Scheme3/Proofs.lean) | Functional correctness and rejection proofs |
-| [Audit.lean](Audit.lean) | Logical dependency reports for representative theorems |
+| [Audit.lean](Audit.lean) | Logical dependency reports for every theorem |
 
 `Primitives Point` exposes SHA-256, SHA3-256, Keccak-256, secp256k1 and ML-KEM
 through typed operations. Every hash returns 32 bytes; KEM keys and ciphertexts

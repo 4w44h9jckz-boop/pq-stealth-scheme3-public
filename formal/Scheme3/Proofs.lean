@@ -180,7 +180,7 @@ theorem match_sound (p : Primitives Point) (spending : Point)
             some m := by simpa [ho, hp] using h
         split at h'
         · rename_i ha
-          exact ⟨(Option.some.inj h').symm, ht, off, stealth, rfl, rfl, ha⟩
+          exact ⟨(Option.some.inj h').symm, ht, off, stealth, rfl, hp, ha⟩
         · simp at h'
   · simp at h
 
