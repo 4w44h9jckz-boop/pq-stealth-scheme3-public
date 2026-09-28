@@ -58,7 +58,8 @@ For ML-KEM: the ciphertexts are of **NIST's own ACVP file**, vendored at `vector
 
 ## Kohaku Integration PoC
 
-[Kohaku Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)
+[Kohaku-ts Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)
+[Kohaku-rs Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq-rs/tree/feat/kohaku-stealth/crates/stealth)
 
 ## Demo
 
