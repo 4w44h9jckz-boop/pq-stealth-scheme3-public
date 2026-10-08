@@ -20,8 +20,8 @@
       "rows_in_plan": 7,
       "rows_present": 7
     },
-    "section-2_9.json": {
-      "sha256": "ef385bfc7c25dda7bd10891dddfe3f215df538d6b608910164ef7d72b4aeb1f4",
+    "section-2.json": {
+      "sha256": "5e4cfa456a119955618f03d22c98db88f32717a96eeb6fd5588bd504e46ccf47",
       "rows_in_plan": 19,
       "rows_present": 19
     }

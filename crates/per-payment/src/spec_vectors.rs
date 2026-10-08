@@ -12,13 +12,13 @@ use std::collections::BTreeSet;
 use std::sync::OnceLock;
 
 const SECTION_1: &str = include_str!("../../../vectors/section-1.json");
-const SECTION_2_9: &str = include_str!("../../../vectors/section-2_9.json");
+const SECTION_2: &str = include_str!("../../../vectors/section-2.json");
 const ACVP: &str = include_str!("../../../vectors/tier1/ml-kem-768-acvp.json");
 
 const SECTION_1_CASES: &[&str] = &[
     "V1-01", "V1-02", "V1-03", "V1-04", "V1-05", "V1-06", "V1-07",
 ];
-const SECTION_2_9_CASES: &[&str] = &[
+const SECTION_2_CASES: &[&str] = &[
     "V3-01", "V3-02", "V3-02a", "V3-03", "V3-04", "V3-05", "V3-06", "V3-06a", "V3-06b", "V3-07",
     "V3-08", "V3-08a", "V3-09", "V3-10", "V3-11", "V3-12", "V3-13", "V3-14", "V3-15",
 ];
@@ -32,9 +32,9 @@ fn section_1() -> &'static Value {
     DOC.get_or_init(|| parse(SECTION_1))
 }
 
-fn section_2_9() -> &'static Value {
+fn section_2() -> &'static Value {
     static DOC: OnceLock<Value> = OnceLock::new();
-    DOC.get_or_init(|| parse(SECTION_2_9))
+    DOC.get_or_init(|| parse(SECTION_2))
 }
 
 fn acvp() -> &'static Value {
@@ -113,11 +113,11 @@ fn sha256(parts: &[&[u8]]) -> Bytes32 {
 }
 
 fn v3_09_seed() -> Vec<u8> {
-    hx(obj(row(section_2_9(), "V3-09"), "given"), "keygen_seed")
+    hx(obj(row(section_2(), "V3-09"), "given"), "keygen_seed")
 }
 
 fn v3_09_meta_bytes() -> Vec<u8> {
-    hx(obj(row(section_2_9(), "V3-09"), "expect"), "meta_address")
+    hx(obj(row(section_2(), "V3-09"), "expect"), "meta_address")
 }
 
 fn combine_parts(ds: &[u8], parts: &Value) -> Bytes32 {
@@ -149,8 +149,8 @@ fn every_committed_vector_has_a_rust_case() {
         SECTION_1_CASES.iter().copied().collect()
     );
     assert_eq!(
-        vector_ids(section_2_9()),
-        SECTION_2_9_CASES.iter().copied().collect()
+        vector_ids(section_2()),
+        SECTION_2_CASES.iter().copied().collect()
     );
 }
 
@@ -255,11 +255,11 @@ fn v1_07_view_tag_byte() {
     assert_ne!(encode(&tag), s(wrong, "leading_byte_of_H_ss"));
 }
 
-// --- §2.9 ----------------------------------------------------------------
+// --- §2 ------------------------------------------------------------------
 
 #[test]
 fn v3_01_keygen_length() {
-    let v = row(section_2_9(), "V3-01");
+    let v = row(section_2(), "V3-01");
     let lengths = u64_array(obj(v, "given"), "lengths");
     assert_eq!(lengths, [128, 96, 127]);
     let seed = v3_09_seed();
@@ -277,35 +277,35 @@ fn v3_01_keygen_length() {
 }
 
 #[test]
-fn v3_02_delegation_windows() {
-    let v = row(section_2_9(), "V3-02");
+fn v3_02_delegation_components() {
+    let v = row(section_2(), "V3-02");
     let given = obj(v, "given");
     let spending = hx(given, "spending_seed");
-    let planted = obj(given, "delegated_objects_by_offset");
-    for offset in ["0", "5", "16", "20", "40", "47"] {
-        let delegated = hx(planted, offset);
-        assert_eq!(delegated.len(), 96, "offset {offset}");
+    let planted = obj(given, "delegated_objects_by_component");
+    for component in ["viewing_ec_seed", "d", "z"] {
+        let delegated = hx(planted, component);
+        assert_eq!(delegated.len(), 96, "{component}");
         let mut seed = spending.clone();
         seed.extend_from_slice(&delegated);
         assert!(
             matches!(SchemeId3::keygen(&seed), Err(Error::SpendingKeyDelegated)),
-            "offset {offset} must be rejected through SchemeId3::keygen"
+            "spending_seed copied into {component} must be rejected through SchemeId3::keygen"
         );
     }
 }
 
 #[test]
 fn v3_02a_clean_keygen() {
-    let v = row(section_2_9(), "V3-02a");
+    let v = row(section_2(), "V3-02a");
     let given = obj(v, "given");
     let mut seed = hx(given, "spending_seed");
     seed.extend_from_slice(&hx(given, "delegated"));
-    SchemeId3::keygen(&seed).expect("no window equals spending_seed");
+    SchemeId3::keygen(&seed).expect("no component equals spending_seed");
 }
 
 #[test]
 fn v3_03_compact_viewing_rejected() {
-    let sec = section_2_9();
+    let sec = section_2();
     let given = obj(row(sec, "V3-03"), "given");
     let mut meta = hx(given, "spending_pk");
     meta.extend_from_slice(&hx(given, "viewing_pk_ec_compact_0x05"));
@@ -319,7 +319,7 @@ fn v3_03_compact_viewing_rejected() {
 
 #[test]
 fn v3_04_ecdh_is_the_x_coordinate() {
-    let v = row(section_2_9(), "V3-04");
+    let v = row(section_2(), "V3-04");
     let given = obj(v, "given");
     let ss_ec = pqsa_ec::ecdh(&b32(given, "esk"), &point(&hx(given, "viewing_pk_ec")))
         .expect("V3-04 uses a valid scalar and point");
@@ -333,7 +333,7 @@ fn v3_04_ecdh_is_the_x_coordinate() {
 
 #[test]
 fn v3_05_combiner_ds_first() {
-    let sec = section_2_9();
+    let sec = section_2();
     let v = row(sec, "V3-05");
     let ds = s(obj(v, "given"), "domain_separator").as_bytes();
     assert_eq!(ds, DS_HYBRID);
@@ -346,7 +346,7 @@ fn v3_05_combiner_ds_first() {
 
 #[test]
 fn v3_06_ikm_order() {
-    let v = row(section_2_9(), "V3-06");
+    let v = row(section_2(), "V3-06");
     let parts = obj(obj(v, "given"), "parts");
     let ss = combine_parts(DS_HYBRID, parts);
     assert_eq!(encode(&ss), s(obj(v, "expect"), "ss"));
@@ -366,7 +366,7 @@ fn v3_06_ikm_order() {
 
 #[test]
 fn v3_06a_ct_bound() {
-    let sec = section_2_9();
+    let sec = section_2();
     let parts = obj(obj(row(sec, "V3-06"), "given"), "parts");
     let v = row(sec, "V3-06a");
     let given = obj(v, "given");
@@ -398,7 +398,7 @@ fn v3_06a_ct_bound() {
 
 #[test]
 fn v3_06b_viewing_bound() {
-    let sec = section_2_9();
+    let sec = section_2();
     let parts = obj(obj(row(sec, "V3-06"), "given"), "parts");
     let v = row(sec, "V3-06b");
     let given = obj(v, "given");
@@ -430,7 +430,7 @@ fn v3_06b_viewing_bound() {
 
 #[test]
 fn v3_07_epk_bound() {
-    let sec = section_2_9();
+    let sec = section_2();
     let parts = obj(obj(row(sec, "V3-06"), "given"), "parts");
     let v = row(sec, "V3-07");
     let given = obj(v, "given");
@@ -462,7 +462,7 @@ fn v3_07_epk_bound() {
 
 #[test]
 fn v3_08_wire_order() {
-    let v = row(section_2_9(), "V3-08");
+    let v = row(section_2(), "V3-08");
     let given = obj(v, "given");
     let expect = obj(v, "expect");
     let ann = Announcement {
@@ -501,11 +501,11 @@ fn v3_08_wire_order() {
 
 #[test]
 fn v3_08a_view_tag_is_metadata_0() {
-    let v = row(section_2_9(), "V3-08a");
+    let v = row(section_2(), "V3-08a");
     let metadata = hx(obj(v, "given"), "metadata");
     let parsed = SchemeId3::announcement_from_bytes(
         &[0u8; 20],
-        &hx(obj(row(section_2_9(), "V3-08"), "given"), "epk"),
+        &hx(obj(row(section_2(), "V3-08"), "given"), "epk"),
         &metadata,
     )
     .expect("honest shape");
@@ -522,7 +522,7 @@ fn v3_08a_view_tag_is_metadata_0() {
 
 #[test]
 fn v3_09_keygen_matches_nist_ek() {
-    let v = row(section_2_9(), "V3-09");
+    let v = row(section_2(), "V3-09");
     let given = obj(v, "given");
     let expect = obj(v, "expect");
     let (meta, master, tracking) =
@@ -568,7 +568,7 @@ fn v3_09_keygen_matches_nist_ek() {
 
 #[test]
 fn v3_10_scalars() {
-    let sec = section_2_9();
+    let sec = section_2();
     let body = v3_09_seed();
     let halves = obj(
         obj(row(sec, "V3-10"), "given"),
@@ -604,7 +604,7 @@ fn v3_10_scalars() {
 
 #[test]
 fn v3_11_meta_length() {
-    let v = row(section_2_9(), "V3-11");
+    let v = row(section_2(), "V3-11");
     let lengths = u64_array(obj(v, "given"), "lengths");
     assert_eq!(lengths, [1249, 1250, 1251]);
     let meta = v3_09_meta_bytes();
@@ -623,7 +623,7 @@ fn v3_11_meta_length() {
 
 #[test]
 fn v3_12_non_point_viewing() {
-    let sec = section_2_9();
+    let sec = section_2();
     let v = row(sec, "V3-12");
     let given = obj(v, "given");
     let good = v3_09_meta_bytes();
@@ -637,7 +637,7 @@ fn v3_12_non_point_viewing() {
 
 #[test]
 fn v3_13_address() {
-    let v = row(section_2_9(), "V3-13");
+    let v = row(section_2(), "V3-13");
     let addr = pqsa_ec::address_of(&point(&hx(obj(v, "given"), "stealth_pk_compressed")));
     assert_eq!(encode(&addr), s(obj(v, "expect"), "address"));
     let wrong = obj(v, "wrong");
@@ -648,7 +648,7 @@ fn v3_13_address() {
 
 #[test]
 fn v3_14_tag_mismatch_is_a_skip() {
-    let sec = section_2_9();
+    let sec = section_2();
     let v = row(sec, "V3-14");
     let given = obj(v, "given");
     let expect = obj(v, "expect");
@@ -710,7 +710,7 @@ fn v3_14_tag_mismatch_is_a_skip() {
 
 #[test]
 fn v3_15_announcement_shape() {
-    let sec = section_2_9();
+    let sec = section_2();
     let v = row(sec, "V3-15");
     let given = obj(v, "given");
     let epk_lengths = u64_array(given, "ephemeralPubKey_lengths");

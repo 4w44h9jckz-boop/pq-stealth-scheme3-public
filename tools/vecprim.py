@@ -239,7 +239,7 @@ def kem_keygen(dz: bytes) -> tuple[bytes, bytes]:
 
 
 def kem_encaps(ek: bytes, m: bytes) -> tuple[bytes, bytes]:
-    """`ML-KEM.Encaps_internal(ek, m)` -> `(ct, ss)`. Deterministic in `m`, per §2.3.
+    """`ML-KEM.Encaps_internal(ek, m)` -> `(ct, ss)`. Deterministic in `m`, per §1.
 
     Returned in the order the specification writes them, `(ct, ss)`, which is the REVERSE of
     the library's `(ss, ct)`. Normalised here rather than at each call site: a fixture with the
@@ -300,9 +300,9 @@ def reduce_to_scalar(base: bytes) -> tuple[int, int]:
     """§1's counter-based reduction. Returns `(scalar, counter)`.
 
     The bound is a **failure**, not an unbounded retry: `counter = 0` contributes no counter
-    byte at all, and counters 1 to 256 contribute byte values `0x01`..`0xFF` then `0x00` -- 257
-    distinct inputs, none repeated -- so a 257th iteration would re-derive the `0x01` candidate
-    already rejected. Raises `ValueError` at exhaustion.
+    byte at all, and counters 1 to 255 contribute byte values `0x01`..`0xFF` -- 256 distinct
+    inputs, each counter one byte -- so there is no counter 256 to encode. Raises `ValueError`
+    at exhaustion.
 
     Big-endian, which V1-02 exists to pin: a little-endian read gives a different scalar,
     therefore a different address, therefore funds the recipient cannot spend. Silent and total.
@@ -310,12 +310,12 @@ def reduce_to_scalar(base: bytes) -> tuple[int, int]:
     candidate = int.from_bytes(base, "big")
     if 0 < candidate < N:
         return candidate, 0
-    for counter in range(1, 257):
-        digest = hashlib.sha256(DS_OFFSET + base + bytes([counter & 0xFF])).digest()
+    for counter in range(1, 256):
+        digest = hashlib.sha256(DS_OFFSET + base + bytes([counter])).digest()
         candidate = int.from_bytes(digest, "big")
         if 0 < candidate < N:
             return candidate, counter
-    raise ValueError("257 candidates exhausted")
+    raise ValueError("256 candidates exhausted")
 
 
 def h_of_ss(ss: bytes) -> tuple[bytes, int, int]:

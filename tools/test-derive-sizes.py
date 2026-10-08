@@ -146,12 +146,12 @@ def main() -> int:
     case("wrong odds for a zero byte exit 1", rc, 1)
     case("and the derived overstatement doubles", "~ 117 gas" in out, True)
 
-    print("\nthe delegation window counts -- (len - 32 + 1), not (len / 32)")
-    # The scan is over the WHOLE delegated object. `96 / 32 = 3` is the wrong answer that
-    # placed the spending seed verbatim in the bytes handed to a scanning service.
-    rc, out = run(("(96 - SCALAR + 1, 65)", "(96 // SCALAR, 65)"))
-    case("a per-32-byte-block window count exits 1", rc, 1)
-    case("and names the window count", "windows" in out, True)
+    print("\nthe delegation component count -- (len / 32)")
+    # The guard compares whole 32-byte components. The superseded every-window scan,
+    # `96 - 32 + 1 = 65`, is the count a stale port would carry.
+    rc, out = run(("(96 // SCALAR, 3)", "(96 - SCALAR + 1, 3)"))
+    case("a sliding-window count exits 1", rc, 1)
+    case("and names the component count", "components" in out, True)
 
     print("\nthe derivation side -- formulas, not copied constants")
     # The formula must agree with FIPS 203's stated length, and that cross-check is the only

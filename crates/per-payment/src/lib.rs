@@ -2,7 +2,7 @@
 //!
 //! The scheme is specified in §2; §1 gives the offset and view-tag derivation it shares with
 //! anything else built on ERC-5564. Spending is secp256k1 ECDSA. What the hybrid does and
-//! does not give is in §5.
+//! does not give is under Security Considerations.
 //!
 use pqsa_core::{
     Bytes32, Error, ExportableSpendKey, StealthScheme, VIEW_TAG_BYTES,
@@ -46,7 +46,8 @@ pub struct Master {
     pub kem_seed: Vec<u8>,
 }
 
-/// Delegatable scan material. §2.1. A delegated scanner sees the whole payment graph (§9).
+/// Delegatable scan material. §2.1. A delegated scanner sees the whole payment graph
+/// (Security Considerations).
 #[derive(Clone)]
 pub struct Tracking {
     /// Viewing scalar. Always `Some` here; the `Option` is vestigial.
@@ -139,23 +140,21 @@ fn offset_of(ss: &Bytes32) -> Result<Bytes32, Error> {
     reduce_to_scalar(&base)
 }
 
-/// §1 scalar reduction. Digests are BE. 257 distinct candidates (`counter = 0` is unhashed
-/// `base`; `1..=256` as `u8` covers every byte including 0 via wrap of 256).
+/// §1 scalar reduction. Digests are BE. 256 distinct candidates (`counter = 0` is unhashed
+/// `base`; `1..=255` are each one `u8`, so no counter value needs more than a byte).
 ///
 /// ```text
-/// for counter in 0..=256:
+/// for counter in 0..=255:
 ///     candidate = base  if counter == 0
 ///               = SHA256(DS_offset || base || u8(counter))  otherwise
 ///     accept if 0 < candidate < n
 /// ```
 fn reduce_to_scalar(base: &Bytes32) -> Result<Bytes32, Error> {
-    for counter in 0u16..=256 {
+    for counter in 0u8..=255 {
         let candidate: Bytes32 = if counter == 0 {
             *base
         } else {
-            #[allow(clippy::cast_possible_truncation)]
-            let byte = counter as u8;
-            Sha256::digest([DS_OFFSET, base.as_slice(), &[byte]].concat()).into()
+            Sha256::digest([DS_OFFSET, base.as_slice(), &[counter]].concat()).into()
         };
         if pqsa_ec::public_point(&candidate).is_ok() {
             return Ok(candidate);
@@ -244,7 +243,8 @@ impl StealthScheme for SchemeId3 {
     type Scanner = Scanner;
     type SpendKey = Bytes32;
 
-    /// `spending_seed(32) ‖ viewing_ec_seed(32) ‖ kem_seed(64)`. Guard scans the 96-byte concat.
+    /// `spending_seed(32) ‖ viewing_ec_seed(32) ‖ kem_seed(64)`. Guard compares the spending
+    /// seed with `viewing_ec_seed`, `d` and `z`.
     fn keygen(seed: &[u8]) -> Result<(MetaAddress, Master, Tracking), Error> {
         if seed.len() != Self::KEYGEN_SEED_BYTES {
             return Err(Error::Malformed);
@@ -253,7 +253,6 @@ impl StealthScheme for SchemeId3 {
         let viewing_ec_seed: Bytes32 = seed[32..64].try_into().map_err(|_| Error::Malformed)?;
         let kem_seed = seed[64..].to_vec();
         let delegated = [viewing_ec_seed.as_slice(), &kem_seed].concat();
-        debug_assert_eq!(pqsa_core::delegation_window_count(delegated.len()), 65);
         reject_if_spending_key_is_delegated(&spending_seed, &delegated)?;
         let spending = pqsa_ec::public_point(&spending_seed)?;
         let viewing_ec = pqsa_ec::public_point(&viewing_ec_seed)?;

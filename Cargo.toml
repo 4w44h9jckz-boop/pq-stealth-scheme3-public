@@ -9,11 +9,12 @@
 # cryptographic ones:
 #
 #   * `k256`      secp256k1. The one the upstream reference uses, which matters because the
-#                 SEC1 `0x05` compact-tag hazard -- stated in §2.2, with its rationale in §3
-#                 where a tree carries that section -- is a property of THIS stack; a
-#                 different curve library would not reproduce the defect it warns about.
-#   * `ml-kem`    ML-KEM-768, and §1 requires the DERANDOMISED internal entry points, so a
-#                 library exposing only `Encaps`/`KeyGen` would not do.
+#                 SEC1 `0x05` compact-tag hazard -- stated in §2.2 -- is a property of THIS
+#                 stack; a different curve library would not reproduce the defect it warns
+#                 about.
+#   * `ml-kem`    ML-KEM-768. §1 requires seed-form keygen (`KeyGen_internal`), and this
+#                 implementation's derived sender (§2.4) and the vectors need
+#                 `Encaps_internal`, so a library exposing only `Encaps`/`KeyGen` would not do.
 #   * `sha2`      SHA-256, for the offset, the view tag and the payment secret.
 #   * `sha3`      SHA3-256 for the combiner, and Keccak-256 for the address. Both live here,
 #                 and the difference between them is ONE PADDING BYTE -- which is why §1 names

@@ -3,7 +3,7 @@
 
 **What it covers, and what it does not.** It checks the figures listed in its own tables:
 the announcement payloads and their field splits, the meta-addresses, the registration
-ratios, and the delegation window counts. **It does not scan the documents for figures it
+ratios, and the delegation component count. **It does not scan the documents for figures it
 has not been told about** -- so a new byte figure is unchecked until someone adds it here,
 and the closing line says so rather than claiming "every quoted figure"; that claim over
 partial coverage would be an overclaimed figure inside the harness built to remove
@@ -82,17 +82,20 @@ SHAPE_SCHEME_ID = {
 # stale. Empty here, and the detector below is what keeps it honest.
 DECLARED_SHAPE_COLLISIONS: list[tuple[str, str]] = []
 
-# The delegation window scans. Both were the subject of a security fix: the scan is over the
-# WHOLE delegated object, so the count is (len - 32 + 1) and not (len / 32).
+# The delegation guard of §2.1 compares `spending_seed` with each 32-byte COMPONENT of the
+# tracking key -- `viewing_ec_seed`, `d`, `z` -- so the count is (len / 32). It used to scan
+# every 32-byte window, (len - 32 + 1) = 65 of them; the windows that straddle a component
+# boundary can only match under a derivation that is already broken, so they were dropped in
+# favour of the independence requirement that actually covers that case.
 DELEGATION = {
-    "schemeId 3 (viewing_ec(32) || kem_seed(64) = 96 B)": (96 - SCALAR + 1, 65),
+    "schemeId 3 (viewing_ec(32) || d(32) || z(32) = 96 B)": (96 // SCALAR, 3),
 }
 
 META = {
     "schemeId 3": (SPENDING_PK + VIEWING_PK_EC + EK,   1_250),
 }
 
-# §4's registration table. `schemeId 1`'s 66 B is ERC-5564's own meta-address -- two
+# The registration table under Rationale, Cost. `schemeId 1`'s 66 B is ERC-5564's own meta-address -- two
 # SEC1-compressed points -- and is the baseline every ratio in that column is against. The
 # ratios are checked here rather than trusted because they are the only figures in that
 # table nobody measured OR quoted from elsewhere: they were computed while writing it, which
@@ -182,12 +185,12 @@ def main() -> int:
             bad.append(f"§2.4 declares {pair[0]} and {pair[1]} the same shape and they are "
                        f"{SHAPES[pair[0]]} and {SHAPES[pair[1]]}")
 
-    print("\ndelegation window counts -- (len - 32 + 1), not (len / 32)")
+    print("\ndelegation components compared -- (len / 32), one per 32-byte component")
     for name, (derived, quoted) in DELEGATION.items():
         mark = "ok" if derived == quoted else "MISMATCH"
-        print(f"  {derived:>4} windows   spec {quoted:>4}   {mark}   {name}")
+        print(f"  {derived:>4} components   spec {quoted:>4}   {mark}   {name}")
         if derived != quoted:
-            bad.append(f"{name}: derived {derived} windows != quoted {quoted}")
+            bad.append(f"{name}: derived {derived} components != quoted {quoted}")
 
     print("\nmeta-addresses, from §2.2's registry column")
     for name, (derived, quoted) in META.items():
@@ -196,7 +199,7 @@ def main() -> int:
         if derived != quoted:
             bad.append(f"{name} meta-address: derived {derived} != quoted {quoted}")
 
-    print(f"\nregistration calldata, per §4's table, against schemeId 1's "
+    print(f"\nregistration calldata, per the cost table, against schemeId 1's "
           f"{META_CLASSICAL} B")
     for name, (size, quoted) in REGISTRATION_RATIOS.items():
         derived = f"{size / META_CLASSICAL:.1f}"
