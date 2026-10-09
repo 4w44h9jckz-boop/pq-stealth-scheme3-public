@@ -21,13 +21,14 @@ against 66) and is paid once per `schemeId`. Against that classical baseline,
 Scheme 3 is **2.45x in gas** (69 330 against 28 313) and is paid every time.
 
 See further on [ethresearch](https://ethresear.ch/t/pq-anonymity-for-stealth-address-protocol/26094)
+and discuss the draft ERC on [Ethereum Magicians](https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923).
 
 ## What is here
 
 | path | what it is |
 |---|---|
 | `spec/ERC-VVVV-schemeid3.md` | the specification and ERC *starter* |
-| `spec/ethereum-magicians-post.md` | a draft of the Ethereum Magicians discussion thread |
+| `spec/ethereum-magicians-post.md` | the opening post of the Ethereum Magicians discussion thread |
 | `crates/core` | the `StealthScheme` trait |
 | `crates/ec` | secp256k1: SEC1 decoding, ECDH, scalar and point addition, the address |
 | `crates/kem` | ML-KEM-768, over `ml-kem`, checked against NIST's own ACVP cases |
@@ -68,16 +69,15 @@ linking `../LICENSE.md`, and `assets/erc-N/`, holding the vectors and their gene
 any link would not resolve there, and runs `gen_vectors.py --check` on the copied assets.
 
 ```bash
-python3 tools/erc_submission.py --number N --out path/to/ERCs \
-    --discussions-to https://ethereum-magicians.org/t/... --created yyyy-mm-dd
+python3 tools/erc_submission.py --number N --out path/to/ERCs --created yyyy-mm-dd
 ```
 
+`discussions-to` already names the
+[Ethereum Magicians thread](https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923).
 Before opening the pull request:
 
-1. Open the Ethereum Magicians thread from `spec/ethereum-magicians-post.md` and pass its URL as
-   `--discussions-to`.
-2. Use the number the editors assign. EIP-1 makes `created` the date of numbering.
-3. Add `nam` to the ERCs repository's `config/.codespell-whitelist` in the same pull request.
+1. Use the number the editors assign. EIP-1 makes `created` the date of numbering.
+2. Add `nam` to the ERCs repository's `config/.codespell-whitelist` in the same pull request.
    codespell otherwise reads the first author's name as a misspelling of "Name".
 
 ## Kohaku Integration PoC

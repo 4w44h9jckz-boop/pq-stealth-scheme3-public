@@ -3,7 +3,7 @@ eip: VVVV
 title: Hybrid post-quantum stealth address scheme
 description: ERC-5564 schemeId 3, announcing with ML-KEM-768 combined with secp256k1 ECDH while spending stays on secp256k1
 author: Nam Ngo (@namnc), Pierre Daix-Moreux (@dmpierre), kassandra.eth (@kassandraoftroy)
-discussions-to: <ethereum-magicians thread, to be opened>
+discussions-to: https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923
 status: Draft
 type: Standards Track
 category: ERC

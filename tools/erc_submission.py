@@ -113,7 +113,8 @@ def main(argv: list[str]) -> int:
                     help="the number the editors assign")
     ap.add_argument("--out", type=Path, required=True,
                     help="where to write ERCS/ and assets/; an ERCs checkout works")
-    ap.add_argument("--discussions-to", help="the Ethereum Magicians thread URL")
+    ap.add_argument("--discussions-to",
+                    help="the Ethereum Magicians thread URL, if not the specification's")
     ap.add_argument("--created", help="yyyy-mm-dd; EIP-1 makes it the date of numbering")
     ap.add_argument("root", nargs="?", type=Path, default=Path("."))
     args = ap.parse_args(argv[1:])
@@ -155,7 +156,9 @@ def main(argv: list[str]) -> int:
 
     print(f"wrote {erc}")
     print(f"wrote {len(ASSETS)} file(s) under {assets}; gen_vectors.py --check passes there")
-    if args.discussions_to is None or not MAGICIANS.match(args.discussions_to):
+    thread = next((ln.split(":", 1)[1].strip() for ln in out.split("\n---\n", 1)[0].split("\n")
+                   if ln.startswith("discussions-to:")), "")
+    if not MAGICIANS.match(thread):
         print("warning: `discussions-to` is not an Ethereum Magicians thread URL yet, "
               "and the ERCs linter rejects anything else")
     return 0

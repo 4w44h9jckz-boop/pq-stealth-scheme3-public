@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -76,8 +77,8 @@ def main() -> int:
              f"eip: {es.PLACEHOLDER}" in (ROOT / es.SPEC).read_text(encoding="utf-8"), True)
 
         rc, log = run(ROOT, Path(tmp) / "bare")
-        case("without a thread it builds, and says the thread is missing",
-             (rc, "warning: `discussions-to`" in log), (0, True))
+        case("without --discussions-to it keeps the specification's thread, and does not warn",
+             (rc, "warning: `discussions-to`" in log), (0, False))
 
     print("\nwhat it must refuse")
     with tempfile.TemporaryDirectory() as tmp:
@@ -104,6 +105,13 @@ def main() -> int:
         spec.write_text(good + "\nA trailing paragraph.\n", encoding="utf-8")
         rc, log = run(root, Path(tmp) / "o4")
         case("content after the Copyright section", rc, 1)
+
+        spec.write_text(re.sub(r"(?m)^discussions-to: .*$",
+                                  "discussions-to: <ethereum-magicians thread, to be opened>",
+                                  good), encoding="utf-8")
+        rc, log = run(root, Path(tmp) / "o6")
+        case("a placeholder thread builds, with a warning",
+             (rc, "warning: `discussions-to`" in log), (0, True))
 
         spec.write_text(good, encoding="utf-8")
         vec = root / "vectors/section-1.json"
