@@ -48,7 +48,7 @@ class Fixture:
     meta_address: bytes
     stealth_address: bytes
     spend_key: bytes
-    epk: bytes
+    ephemeral_pub_key: bytes
     metadata: bytes
 
 
@@ -64,7 +64,7 @@ def generate() -> Fixture:
         "meta_address",
         "stealth_address",
         "spend_key",
-        "epk_field",
+        "ephemeral_pub_key",
         "metadata",
     }
     if not isinstance(body, dict) or set(body) != fields:
@@ -83,6 +83,6 @@ def generate() -> Fixture:
         meta_address=_hex(body["meta_address"], "meta_address", meta_address_bytes),
         stealth_address=_hex(body["stealth_address"], "stealth_address", 20),
         spend_key=_hex(body["spend_key"], "spend_key", 32),
-        epk=_hex(body["epk_field"], "epk_field", shape[0]),
+        ephemeral_pub_key=_hex(body["ephemeral_pub_key"], "ephemeral_pub_key", shape[0]),
         metadata=_hex(body["metadata"], "metadata", shape[1]),
     )

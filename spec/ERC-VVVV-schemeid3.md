@@ -28,7 +28,7 @@ change and no new contract.
 | | schemeId 3 |
 |---|---|
 | payment secret | ML-KEM-768 shared secret combined with a secp256k1 ECDH secret |
-| announcement | 1 122 B per payment: one ephemeral public key and one ML-KEM ciphertext |
+| announcement | 1 122 B per payment: an ephemeral public key, an ML-KEM ciphertext and a view tag |
 | meta-address | 1 250 B, registered once via ERC-6538 |
 | spending | secp256k1 ECDSA from a plain EOA |
 
@@ -297,9 +297,10 @@ stealth_pk  = spending_pk + H(ss)·G                                    (Section
 address     = keccak256(uncompressed(stealth_pk)[1..65])[12..32]              20 B
 ```
 
-It calls ERC-5564 `announce(3, address, epk, view_tag(ss) || ct)` (Section 3) and pays
+It calls ERC-5564 `announce(3, address, epk || ct, view_tag(ss))` (Section 3) and pays
 `address`. The `stealthAddress` argument MUST be `address`, because scanners compare against it.
-The sender learns `stealth_pk` but not `stealth_sk`.
+The sender MAY append ERC-5564's token metadata after the view tag. The sender learns
+`stealth_pk` but not `stealth_sk`.
 
 #### 2.5 Scanner
 
@@ -307,6 +308,8 @@ Given a tracking key `viewing_ec || d || z`, the recipient's meta-address, and a
 under `schemeId` 3 whose fields have the lengths of Section 3:
 
 ```
+epk   <- ephemeralPubKey[0..33]
+ct    <- ephemeralPubKey[33..1121]
 ss_ec <- ECDH(viewing_ec, epk).x
 ss_pq <- ML-KEM-768.Decaps(dk, ct)                       dk expanded from (d, z)
 ss    <- hybrid_combine("pq-stealth/hybrid-payment/v1",
@@ -353,7 +356,7 @@ contain leads to a skip, never to an error that stops the scan.
 | condition | behaviour |
 |---|---|
 | `schemeId` not registered by the recipient | skip |
-| `ephemeralPubKey` not 33 bytes, or `metadata` not 1 089 bytes | skip |
+| `ephemeralPubKey` not 1 121 bytes, or `metadata` empty | skip |
 | `epk` not a valid compressed point | skip |
 | view tag mismatch | skip |
 | announced `stealthAddress` differs from the derived address | skip |
@@ -367,37 +370,19 @@ contain leads to a skip, never to an error that stops the scan.
 #### 2.8 ERC-5564 methods
 
 ERC-5564 requires each scheme to define `generateStealthAddress`, `checkStealthAddress` and
-`computeStealthKey`. For `schemeId` 3 the recipient also needs `ct`, which travels in
-`metadata`. So each method takes `metadata` after `ephemeralPubKey`, and `generateStealthAddress`
-returns `metadata` (whose first byte is the view tag) in place of `viewTag`:
+`computeStealthKey`. `schemeId` 3 uses ERC-5564's signatures unchanged. `ct` travels in
+`ephemeralPubKey` (Section 3), so every method that needs it already receives it.
 
-```solidity
-function generateStealthAddress(bytes memory stealthMetaAddress)
-  external view
-  returns (address stealthAddress, bytes memory ephemeralPubKey, bytes memory metadata);
-
-function checkStealthAddress(
-  address stealthAddress,
-  bytes memory ephemeralPubKey,
-  bytes memory metadata,
-  bytes memory viewingKey,
-  bytes memory spendingPubKey
-) external view returns (bool);
-
-function computeStealthKey(
-  address stealthAddress,
-  bytes memory ephemeralPubKey,
-  bytes memory metadata,
-  bytes memory viewingKey,
-  bytes memory spendingKey
-) external view returns (bytes memory);
-```
-
-- `stealthMetaAddress` is the 1 250-byte `meta` of Section 2.2.
-- `viewingKey` is the 96-byte tracking key. `viewing_pk_ec` and `ek` are recomputed from it.
-- `spendingPubKey` is `spending_pk`, and `spendingKey` is `spending_sk`.
-- The methods implement Sections 2.4, 2.5 and 2.6 respectively. `checkStealthAddress` returns
-  `false` wherever Section 2.7 says skip.
+- `generateStealthAddress(stealthMetaAddress)` implements Section 2.4 and returns `address`,
+  `epk || ct` as `ephemeralPubKey`, and `view_tag(ss)` as `viewTag`. `stealthMetaAddress` is the
+  1 250-byte `meta` of Section 2.2.
+- `checkStealthAddress(stealthAddress, ephemeralPubKey, viewingKey, spendingPubKey)` implements
+  Section 2.5. It takes no view tag, so it compares addresses only, and it returns `false`
+  wherever Section 2.7 says skip.
+- `computeStealthKey(stealthAddress, ephemeralPubKey, viewingKey, spendingKey)` implements
+  Section 2.6.
+- `viewingKey` is the 96-byte tracking key, from which `viewing_pk_ec` and `ek` are recomputed.
+  `spendingPubKey` is `spending_pk`, and `spendingKey` is `spending_sk`.
 
 ### 3. Wire format
 
@@ -408,15 +393,21 @@ unchanged:
 |---|---|---|
 | `schemeId` | 3 | |
 | `stealthAddress` | `address` from Section 2.4 | 20 B |
-| `ephemeralPubKey` | `epk` | exactly 33 B |
-| `metadata` | `view_tag || ct` | exactly 1 089 B |
+| `ephemeralPubKey` | `epk || ct` | exactly 1 121 B |
+| `metadata` | `view_tag`, then optional ERC-5564 token metadata | at least 1 B |
 
-1. The view tag MUST be the first byte of `metadata`, as ERC-5564 requires.
-2. `metadata` MUST be exactly `view_tag || ct`, in that order.
-3. `ephemeralPubKey` MUST carry exactly `epk`, and the two fields MUST NOT be swapped.
+1. `ephemeralPubKey` MUST be exactly `epk || ct`, in that order: `epk` in bytes 0 to 32 and
+   `ct` in bytes 33 to 1 120.
+2. The view tag MUST be the first byte of `metadata`, as ERC-5564 requires.
+3. A sender MAY follow the view tag with the 56 bytes of token metadata ERC-5564 recommends.
+   `schemeId` 3 gives no meaning to any byte after the first. A scanner MUST read only
+   `metadata[0]`, and MUST NOT skip an announcement because `metadata` is longer than one byte.
+   These bytes are not bound into `ss`, so, as under `schemeId` 1, they are the sender's
+   unauthenticated claim.
 
-A scanner MUST skip a `schemeId` 3 announcement with any other field length (Section 2.7).
-Meta-addresses are registered with ERC-6538 `registerKeys(3, meta)` (Section 2.3).
+A scanner MUST skip a `schemeId` 3 announcement whose `ephemeralPubKey` is not 1 121 bytes or
+whose `metadata` is empty (Section 2.7). Meta-addresses are registered with ERC-6538
+`registerKeys(3, meta)` (Section 2.3).
 
 ## Rationale
 
@@ -469,6 +460,17 @@ announcements. But a quantum adversary can compute `ss_ec` for every registered 
 such a tag would let it rule out about 255 of 256 candidate recipients for each announcement,
 which is enough to deanonymise. A tag derived from `ss` is visible only to someone who can
 decapsulate. The price is one decapsulation per announcement scanned.
+
+### Why `ct` travels in `ephemeralPubKey`
+
+ERC-5564 describes `ephemeralPubKey` as the ephemeral public key used by the sender and states
+no length for it. An ML-KEM ciphertext is the sender's per-payment contribution to the
+shared secret, the KEM counterpart of an ephemeral public key. X-Wing, for instance, defines its
+ciphertext as the ML-KEM ciphertext followed by the sender's ephemeral X25519 public key.
+Putting `epk || ct` in `ephemeralPubKey` leaves `metadata` as ERC-5564 lays it out, so the token
+metadata convention and ERC-5564's method signatures apply unchanged. Putting `ct` in
+`metadata` instead would displace the token metadata and would need extra method parameters to
+reach `ct`.
 
 ### Why the tracking key holds the seed `(d, z)`
 
@@ -526,13 +528,14 @@ has no fixture, so its rows use constructed payloads of the same lengths with no
 | schemeId | `ephemeralPubKey` + `metadata` | calldata | gas | pricing rule | vs classical |
 |---|---|---|---|---|---|
 | 1 (classical) | 34 B | 292 B | 28 313 | standard | 1.00x |
-| 3 | 1 122 B | 1 380 B | 69 300 | EIP-7623 floor | 2.45x |
+| 3 | 1 122 B | 1 380 B | 69 330 | EIP-7623 floor | 2.45x |
 
 The `schemeId` 3 receipt equals the [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623)
 calldata floor exactly: 21 000 plus 10 per calldata token. So execution is not charged, and the
 figure is set by calldata size alone. The classical receipt is above its floor and pays the
 standard rate. The 2.45x ratio therefore compares two pricing rules, and any calldata repricing
-will move it.
+will move it. The `schemeId` 3 row carries the view tag alone in `metadata`. A sender that
+appends ERC-5564's token metadata adds 56 bytes of calldata, and that variant is not measured.
 
 **Registration**, a first-time `registerKeys` call with a fresh registrant:
 
@@ -548,7 +551,7 @@ make up most of this cost, and it is paid once per recipient.
 
 | | announce | fund | spend | total gas |
 |---|---|---|---|---|
-| schemeId 3 | 69 300 | 21 000 | 21 000 | 111 300 |
+| schemeId 3 | 69 330 | 21 000 | 21 000 | 111 330 |
 
 The run announces, funds the derived address, and spends from it with the derived key. A token
 payment adds the token transfer. Unless the sender sponsors gas, it also needs a transaction
@@ -562,23 +565,15 @@ unaffected, and a recipient can register under both schemes without migrating (b
 2.3). ERC-5564 requires the ERC that standardises a scheme to declare its `schemeId`, and this
 ERC declares `schemeId` 3.
 
-`schemeId` 3 departs from three ERC-5564 conventions. Tools that parse announcements or
-meta-addresses generically will misread `schemeId` 3 data unless they dispatch on `schemeId`
-first.
+`schemeId` 3 departs from one ERC-5564 convention, the meta-address length. ERC-5564 defines
+meta-addresses of length `n` or `2n` for a scheme whose public keys are `n` bytes long.
+`schemeId` 3 has keys of two lengths, 33 and 1 184 bytes. Its 1 250-byte meta-address is not of
+that form, and a parser that splits at half its length will misparse it.
 
-1. **Metadata layout.** ERC-5564 requires the view tag in the first byte of `metadata`, and
-   `schemeId` 3 satisfies that. ERC-5564 also recommends (SHOULD) that bytes 2 to 57 carry a
-   function selector, a token address and an amount. `schemeId` 3 fills `metadata` with `ct`,
-   so it does not follow that recommendation, and an indexer that reads those bytes as token
-   data will get ciphertext bytes. `schemeId` 3 announcements carry no token or amount label.
-2. **Meta-address length.** ERC-5564 defines meta-addresses of length `n` or `2n` for a scheme
-   whose public keys are `n` bytes long. `schemeId` 3 has keys of two lengths, 33 and 1 184
-   bytes. Its 1 250-byte meta-address is not of that form, and a parser that splits at half its
-   length will misparse it.
-3. **Method signatures.** ERC-5564's `checkStealthAddress` and `computeStealthKey` take
-   `ephemeralPubKey` but not `metadata`, and `generateStealthAddress` returns a one-byte
-   `viewTag`. `schemeId` 3 needs `ct`, which is in `metadata`, so Section 2.8 adds that
-   parameter and return value.
+It keeps ERC-5564's other conventions. The view tag is the first byte of `metadata`, which can
+carry ERC-5564's token metadata after it, and the methods of Section 2.8 have ERC-5564's
+signatures. Its `ephemeralPubKey` is 1 121 bytes rather than one 33-byte point, so a tool that
+assumes the length of `schemeId` 1's must dispatch on `schemeId` first.
 
 ## Test Cases
 

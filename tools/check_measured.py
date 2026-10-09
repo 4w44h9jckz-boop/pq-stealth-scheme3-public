@@ -170,7 +170,8 @@ def _gas_used_values(value: object) -> set[int]:
 
 def _byte_values(value: object) -> set[int]:
     """Collect wire-size leaves that are not gas claims."""
-    keys = {"calldata_bytes", "epk_bytes", "metadata_bytes", "meta_address_bytes"}
+    keys = {"calldata_bytes", "ephemeral_pub_key_bytes", "metadata_bytes",
+            "meta_address_bytes"}
     found: set[int] = set()
     if isinstance(value, dict):
         for key, child in value.items():

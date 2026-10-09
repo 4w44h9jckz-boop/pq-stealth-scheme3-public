@@ -348,23 +348,35 @@ def group_2(t1: dict) -> dict[str, dict]:
     tag = vp.view_tag(ss)
     v["V3-08"] = {"claim": "wire shape",
                   "given": {"epk": hx(epk), "view_tag": hx(tag), "ct": hx(ct)},
-                  "expect": {"ephemeralPubKey": hx(epk),
-                             "metadata": hx(tag) + hx(ct),
-                             "metadata_bytes": len(tag) + len(ct),
-                             "payload_bytes": len(epk) + len(tag) + len(ct)},
-                  "wrong": {"ct_then_view_tag": hx(ct) + hx(tag),
-                            "note": "ct || view_tag, which puts the view tag at "
-                                    "metadata[1088] -- the same length as the right answer, "
-                                    "so no length check distinguishes it"}}
-    v["V3-08a"] = {"claim": "the view tag is metadata[0]",
-                   "given": {"metadata": hx(tag) + hx(ct)},
-                   "expect": {"view_tag_at_index_0": hx(tag)},
-                   "wrong": {"leading_byte_of_ct": hx(ct[:vp.VIEW_TAG_BYTES]),
-                             "note": "reading the tag off ct rather than off metadata[0]. "
-                                     "At one byte this still agrees 1 time in 256, so it is "
-                                     "a scanner that misses most payments to it and finds "
-                                     "the occasional one -- an intermittent fault, which is "
-                                     "harder to chase than a clean empty scan"}}
+                  "expect": {"ephemeralPubKey": hx(epk) + hx(ct),
+                             "metadata": hx(tag),
+                             "ephemeralPubKey_bytes": len(epk) + len(ct),
+                             "payload_bytes": len(epk) + len(ct) + len(tag)},
+                  "wrong": {"ct_then_epk": hx(ct) + hx(epk),
+                            "superseded": {"ephemeralPubKey": hx(epk),
+                                           "metadata": hx(tag) + hx(ct)},
+                            "note": "ct || epk in ephemeralPubKey, which is the same length "
+                                    "as the right answer, so no length check distinguishes "
+                                    "it; and the superseded layout with ct in metadata, "
+                                    "which a conforming scanner skips on the "
+                                    "ephemeralPubKey length"}}
+    # ERC-5564's native-token block: selector 0xeeeeeeee, the 0xEeee...EEeE address, then the
+    # amount as 32 big-endian bytes. 1 ETH, whose low byte is zero.
+    token_block = (bytes.fromhex("eeeeeeee") + bytes.fromhex("ee" * 20)
+                   + (10**18).to_bytes(32, "big"))
+    assert len(token_block) == 56 and token_block[-1] != tag[0]
+    v["V3-08a"] = {"claim": "the view tag is metadata[0], and any later bytes are ignored",
+                   "given": {"ephemeralPubKey": hx(epk) + hx(ct),
+                             "metadata_view_tag_only": hx(tag),
+                             "metadata_with_token_block": hx(tag) + hx(token_block)},
+                   "expect": {"view_tag_at_index_0": hx(tag),
+                              "outcome": "both metadata values parse, to the same view tag"},
+                   "wrong": {"last_byte_of_metadata": hx(token_block[-1:]),
+                             "note": "requiring metadata to be exactly one byte, which skips "
+                                     "every payment from a sender that follows ERC-5564's "
+                                     "token-metadata recommendation; or reading the tag off "
+                                     "the end of metadata, which is the amount's low byte "
+                                     "once the token block is present"}}
 
     # ----------------------------------------------------------------------------------
     # V3-09..V3-15 -- RE-HOMED from the schemeId 2 set, which this tree no longer ships.
@@ -506,16 +518,19 @@ def group_2(t1: dict) -> dict[str, dict]:
                                     "permissionless, so an error path there is a scanner "
                                     "denial of service (Section2.7)"}}
 
-    v["V3-15"] = {"claim": "a malformed ct is a skip at the entry point, not an error",
-                  "given": {"metadata_lengths": [1088, 1089, 1090],
-                            "ephemeralPubKey_lengths": [32, 33]},
-                  "expect": {"outcome": "skip for every length but 1089 / 33, which is "
-                                        "processed"},
+    v["V3-15"] = {"claim": "a malformed announcement is a skip at the entry point, not an "
+                           "error",
+                  "given": {"ephemeralPubKey_lengths": [33, 1120, 1121, 1122],
+                            "metadata_lengths": [0, 1, 57]},
+                  "expect": {"outcome": "skip unless ephemeralPubKey is 1121 bytes and "
+                                        "metadata is at least 1 byte; 1121 / 1 and "
+                                        "1121 / 57 are processed"},
                   "wrong": {"note": "raising, or propagating a library exception. Anyone can "
                                     "call announce() with any bytes, so a scanner that errors "
                                     "on shape stops at the first announcement an attacker "
                                     "publishes -- and it costs the attacker one transaction. "
-                                    "The 1089 case is the positive control"}}
+                                    "33 is the superseded epk-only field. 1121 / 1 and "
+                                    "1121 / 57 are the positive controls"}}
 
     return v
 

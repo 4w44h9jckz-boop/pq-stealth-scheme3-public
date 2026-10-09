@@ -5,7 +5,6 @@
 
 use super::*;
 use pqsa_core::{Bytes32, Error, StealthScheme, VIEW_TAG_BYTES};
-use pqsa_kem::{Kem, MlKem768};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -477,47 +476,59 @@ fn v3_08_wire_order() {
     assert_eq!(encode(&epk_field), s(expect, "ephemeralPubKey"));
     assert_eq!(encode(&metadata), s(expect, "metadata"));
     assert_eq!(
-        metadata.len(),
-        usize::try_from(u64_field(expect, "metadata_bytes")).unwrap()
+        epk_field.len(),
+        usize::try_from(u64_field(expect, "ephemeralPubKey_bytes")).unwrap()
     );
     assert_eq!(
         epk_field.len() + metadata.len(),
         usize::try_from(u64_field(expect, "payload_bytes")).unwrap()
     );
 
-    let reversed = hx(obj(v, "wrong"), "ct_then_view_tag");
+    let wrong = obj(v, "wrong");
+    let reversed = hx(wrong, "ct_then_epk");
     assert_eq!(
         reversed.len(),
-        metadata.len(),
+        epk_field.len(),
         "length does not distinguish the swap"
     );
-    let parsed = SchemeId3::announcement_from_bytes(&[0u8; 20], &epk_field, &reversed)
-        .expect("1089 B still parses");
-    assert_ne!(
-        parsed.view_tag, ann.view_tag,
-        "ct || view_tag puts the tag at metadata[1088]"
+    if let Some(parsed) = SchemeId3::announcement_from_bytes(&[0u8; 20], &reversed, &metadata) {
+        assert_ne!(
+            parsed.epk, ann.epk,
+            "ct || epk puts ct's first 33 bytes where epk belongs"
+        );
+    }
+    let superseded = obj(wrong, "superseded");
+    assert!(
+        SchemeId3::announcement_from_bytes(
+            &[0u8; 20],
+            &hx(superseded, "ephemeralPubKey"),
+            &hx(superseded, "metadata"),
+        )
+        .is_none(),
+        "ct in metadata leaves a 33-byte ephemeralPubKey, which is a skip"
     );
 }
 
 #[test]
 fn v3_08a_view_tag_is_metadata_0() {
     let v = row(section_2(), "V3-08a");
-    let metadata = hx(obj(v, "given"), "metadata");
-    let parsed = SchemeId3::announcement_from_bytes(
-        &[0u8; 20],
-        &hx(obj(row(section_2(), "V3-08"), "given"), "epk"),
-        &metadata,
-    )
-    .expect("honest shape");
+    let given = obj(v, "given");
+    let epk_field = hx(given, "ephemeralPubKey");
+    let want = s(obj(v, "expect"), "view_tag_at_index_0");
+    for key in ["metadata_view_tag_only", "metadata_with_token_block"] {
+        let metadata = hx(given, key);
+        let parsed = SchemeId3::announcement_from_bytes(&[0u8; 20], &epk_field, &metadata)
+            .unwrap_or_else(|| panic!("{key} is an honest shape"));
+        assert_eq!(encode(&parsed.view_tag), want, "{key}");
+        assert_eq!(parsed.view_tag[0], metadata[0], "{key}");
+    }
+    let with_token = hx(given, "metadata_with_token_block");
+    assert_eq!(with_token.len(), VIEW_TAG_BYTES + 56);
     assert_eq!(
-        encode(&parsed.view_tag),
-        s(obj(v, "expect"), "view_tag_at_index_0")
+        encode(&with_token[with_token.len() - 1..]),
+        s(obj(v, "wrong"), "last_byte_of_metadata")
     );
-    assert_eq!(parsed.view_tag[0], metadata[0]);
-    assert_ne!(
-        encode(&parsed.view_tag),
-        s(obj(v, "wrong"), "leading_byte_of_ct")
-    );
+    assert_ne!(s(obj(v, "wrong"), "last_byte_of_metadata"), want);
 }
 
 #[test]
@@ -715,33 +726,29 @@ fn v3_15_announcement_shape() {
     let given = obj(v, "given");
     let epk_lengths = u64_array(given, "ephemeralPubKey_lengths");
     let metadata_lengths = u64_array(given, "metadata_lengths");
-    assert_eq!(epk_lengths, [32, 33]);
-    assert_eq!(metadata_lengths, [1088, 1089, 1090]);
-    let honest_epk = hx(obj(row(sec, "V3-08"), "given"), "epk");
+    assert_eq!(epk_lengths, [33, 1120, 1121, 1122]);
+    assert_eq!(metadata_lengths, [0, 1, 57]);
+    let honest_epk = hx(obj(row(sec, "V3-08"), "expect"), "ephemeralPubKey");
     let honest_md = hx(obj(row(sec, "V3-08"), "expect"), "metadata");
-    assert_eq!(honest_epk.len(), 33);
-    assert_eq!(honest_md.len(), VIEW_TAG_BYTES + MlKem768::CT_BYTES);
+    assert_eq!(honest_epk.len(), EPHEMERAL_PUB_KEY_BYTES);
+    assert_eq!(honest_md.len(), VIEW_TAG_BYTES);
 
     for epk_len in epk_lengths {
         for &md_len in &metadata_lengths {
             let epk_len = usize::try_from(epk_len).unwrap();
             let md_len = usize::try_from(md_len).unwrap();
-            let epk = if epk_len == 33 {
-                honest_epk.clone()
-            } else {
-                vec![0x02; epk_len]
-            };
-            let md = if md_len == honest_md.len() {
-                honest_md.clone()
-            } else {
-                vec![0x11; md_len]
-            };
+            // A truncated or extended field keeps the honest bytes it has room for, so the
+            // only thing wrong with it is its length.
+            let mut epk = honest_epk.clone();
+            epk.resize(epk_len, 0x11);
+            let mut md = honest_md.clone();
+            md.resize(md_len, 0x11);
             let parsed = SchemeId3::announcement_from_bytes(&[0u8; 20], &epk, &md);
-            let want_some = epk_len == 33 && md_len == 1089;
+            let want_some = epk_len == EPHEMERAL_PUB_KEY_BYTES && md_len >= VIEW_TAG_BYTES;
             assert_eq!(
                 parsed.is_some(),
                 want_some,
-                "epk {epk_len} metadata {md_len}"
+                "ephemeralPubKey {epk_len} metadata {md_len}"
             );
         }
     }

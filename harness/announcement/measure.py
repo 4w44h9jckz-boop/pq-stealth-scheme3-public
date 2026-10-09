@@ -40,7 +40,7 @@ class Case:
     scheme_id: int
     kind: str
     stealth_address: bytes
-    epk: bytes
+    ephemeral_pub_key: bytes
     metadata: bytes
 
 
@@ -58,13 +58,15 @@ def _observation(receipt: dict, calldata: str) -> dict[str, int]:
 
 
 def _send(url: str, case: Case, *, zero_payload: bool = False) -> dict[str, int]:
-    epk = bytes(len(case.epk)) if zero_payload else case.epk
+    ephemeral_pub_key = (
+        bytes(len(case.ephemeral_pub_key)) if zero_payload else case.ephemeral_pub_key
+    )
     metadata = bytes(len(case.metadata)) if zero_payload else case.metadata
     receipt, calldata = send_announcement(
         url,
         case.scheme_id,
         "0x" + case.stealth_address.hex(),
-        "0x" + epk.hex(),
+        "0x" + ephemeral_pub_key.hex(),
         "0x" + metadata.hex(),
     )
     return _observation(receipt, calldata)
@@ -79,8 +81,8 @@ def _cases(context: Context) -> list[Case]:
     byte. It is a reference point for the ratio, not a sample of anything.
     """
     fixture = context.fixture
-    epk_bytes, metadata_bytes = derive_sizes.SHAPES["schemeId 3 announcement"]
-    if (len(fixture.epk), len(fixture.metadata)) != (epk_bytes, metadata_bytes):
+    shape = derive_sizes.SHAPES["schemeId 3 announcement"]
+    if (len(fixture.ephemeral_pub_key), len(fixture.metadata)) != shape:
         raise RuntimeError("fixture announcement does not match Section 2.4's announcement shape")
     return [
         Case(
@@ -96,7 +98,7 @@ def _cases(context: Context) -> list[Case]:
             3,
             "real_sample",
             fixture.stealth_address,
-            fixture.epk,
+            fixture.ephemeral_pub_key,
             fixture.metadata,
         ),
     ]
@@ -112,13 +114,15 @@ def collect(context: Context) -> dict:
         for case in cases:
             transaction = _send(node.url, case)
             probe = _send(node.url, case, zero_payload=True)
-            payload_zero_bytes = case.epk.count(0) + case.metadata.count(0)
+            payload_zero_bytes = (
+                case.ephemeral_pub_key.count(0) + case.metadata.count(0)
+            )
             results.append(
                 {
                     "name": case.name,
                     "scheme_id": case.scheme_id,
                     "kind": case.kind,
-                    "epk_bytes": len(case.epk),
+                    "ephemeral_pub_key_bytes": len(case.ephemeral_pub_key),
                     "metadata_bytes": len(case.metadata),
                     "payload_zero_bytes": payload_zero_bytes,
                     # Derived from the row beside it, never sent. See harness/eip7623.py.
@@ -154,10 +158,10 @@ def collect(context: Context) -> dict:
     }
 
 
-def _calldata_bytes(epk_bytes: int, metadata_bytes: int) -> int:
-    padded_epk = 32 * ((epk_bytes + 31) // 32)
+def _calldata_bytes(ephemeral_pub_key_bytes: int, metadata_bytes: int) -> int:
+    padded_ephemeral_pub_key = 32 * ((ephemeral_pub_key_bytes + 31) // 32)
     padded_metadata = 32 * ((metadata_bytes + 31) // 32)
-    return 4 + 4 * 32 + 32 + padded_epk + 32 + padded_metadata
+    return 4 + 4 * 32 + 32 + padded_ephemeral_pub_key + 32 + padded_metadata
 
 
 def _assert_accounting(results: list[dict], diagnostics: list[dict]) -> None:
@@ -167,7 +171,7 @@ def _assert_accounting(results: list[dict], diagnostics: list[dict]) -> None:
         primary = result["transaction"]
         probe = probes[result["name"]]
         expected_calldata = _calldata_bytes(
-            result["epk_bytes"], result["metadata_bytes"]
+            result["ephemeral_pub_key_bytes"], result["metadata_bytes"]
         )
         if primary["calldata_bytes"] != expected_calldata:
             raise RuntimeError(f"{result['name']}: wrong primary calldata length")
@@ -205,7 +209,7 @@ def render(artifact: dict) -> str:
         primary = result["transaction"]
         lines.append(
             f"{result['name']:<22}{result['kind']:<22}"
-            f"{result['epk_bytes'] + result['metadata_bytes']:>9}"
+            f"{result['ephemeral_pub_key_bytes'] + result['metadata_bytes']:>9}"
             f"{primary['gas_used']:>10}"
             f"{('floor' if floor_binds(primary) else 'standard'):>10}"
             f"{result['upper_bound_gas']:>13}"

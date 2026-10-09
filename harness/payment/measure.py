@@ -59,12 +59,12 @@ def _require_eoa(url: str, address: str, label: str) -> None:
 
 
 def _announcement_calldata_bytes() -> int:
-    epk_bytes, metadata_bytes = derive_sizes.SHAPES["schemeId 3 announcement"]
+    ephemeral_pub_key_bytes, metadata_bytes = derive_sizes.SHAPES["schemeId 3 announcement"]
     return (
         4
         + 4 * 32
         + 32
-        + 32 * ((epk_bytes + 31) // 32)
+        + 32 * ((ephemeral_pub_key_bytes + 31) // 32)
         + 32
         + 32 * ((metadata_bytes + 31) // 32)
     )
@@ -89,7 +89,7 @@ def collect(context: Context) -> dict:
             node.url,
             fixture.scheme_id,
             stealth_address,
-            "0x" + fixture.epk.hex(),
+            "0x" + fixture.ephemeral_pub_key.hex(),
             "0x" + fixture.metadata.hex(),
         )
         calldata_bytes = bytes.fromhex(calldata.removeprefix("0x"))

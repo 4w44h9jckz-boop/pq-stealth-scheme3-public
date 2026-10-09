@@ -18,6 +18,10 @@ const DS_OFFSET: &[u8] = b"pq-stealth/offset/v1";
 
 /// View-tag domain separator. Separate digest from the offset (V1-07).
 const DS_VIEWTAG: &[u8] = b"pq-stealth/view-tag/v1";
+
+/// `ephemeralPubKey` length: `epk` (33) then `ct` (1 088). §3.
+pub const EPHEMERAL_PUB_KEY_BYTES: usize = 33 + MlKem768::CT_BYTES;
+
 /// schemeId 3: payment secret combines ECDH and KEM secrets. §2.
 pub struct SchemeId3;
 
@@ -90,7 +94,7 @@ pub fn verified_ek(kem_seed: &[u8], registered: &[u8]) -> Result<Vec<u8>, Error>
     Ok(ek)
 }
 
-/// ERC-5564 payload. §3: `epk` in `ephemeralPubKey`, `view_tag ‖ ct` in `metadata`.
+/// ERC-5564 payload. §3: `epk ‖ ct` in `ephemeralPubKey`, `view_tag` at `metadata[0]`.
 #[derive(Debug, Clone)]
 pub struct Announcement {
     /// schemeId 3: sender ephemeral point.
@@ -383,7 +387,10 @@ impl StealthScheme for SchemeId3 {
         })
     }
 
-    /// `ephemeralPubKey` = `epk`, `metadata` = `view_tag ‖ ct`.
+    /// `ephemeralPubKey` = `epk ‖ ct`, `metadata` = `view_tag`.
+    ///
+    /// `metadata` is the view tag alone. ERC-5564 lets the bytes after it carry token data;
+    /// that is the caller's to append, since this scheme does not know the token or amount.
     ///
     /// # Panics
     ///
@@ -392,22 +399,25 @@ impl StealthScheme for SchemeId3 {
         let epk = ann.epk.expect("schemeId 3 always has an ephemeral point");
         (
             ann.stealth_address,
-            epk.as_bytes().to_vec(),
-            [ann.view_tag.as_slice(), &ann.ct].concat(),
+            [epk.as_bytes().as_slice(), &ann.ct].concat(),
+            ann.view_tag.to_vec(),
         )
     }
 
+    /// Reads the view tag from `metadata[0]` and ignores any later bytes, which ERC-5564
+    /// leaves to the sender.
     fn announcement_from_bytes(
         stealth_address: &[u8; 20],
-        epk: &[u8],
+        ephemeral_pub_key: &[u8],
         metadata: &[u8],
     ) -> Option<Announcement> {
-        if epk.len() != 33 || metadata.len() != VIEW_TAG_BYTES + MlKem768::CT_BYTES {
+        if ephemeral_pub_key.len() != EPHEMERAL_PUB_KEY_BYTES || metadata.len() < VIEW_TAG_BYTES {
             return None;
         }
+        let (epk, ct) = ephemeral_pub_key.split_at(33);
         Some(Announcement {
             epk: Some(pqsa_ec::decode_point(epk).ok()?),
-            ct: metadata[VIEW_TAG_BYTES..].to_vec(),
+            ct: ct.to_vec(),
             view_tag: metadata[..VIEW_TAG_BYTES].try_into().ok()?,
             stealth_address: *stealth_address,
         })
@@ -814,8 +824,8 @@ mod tests {
         let mut sender = pqsa_core::SenderState::resume([0x5a; 32], 0);
         let ann = SchemeId3::announce(&meta, &sender.draw_seed::<SchemeId3>().unwrap()).unwrap();
         let (addr, epk, metadata) = SchemeId3::announcement_to_bytes(&ann);
-        assert_eq!(epk.len(), 33);
-        assert_eq!(metadata.len(), VIEW_TAG_BYTES + MlKem768::CT_BYTES);
+        assert_eq!(epk.len(), 33 + MlKem768::CT_BYTES);
+        assert_eq!(metadata.len(), VIEW_TAG_BYTES);
 
         let blob: Vec<u8> = addr.iter().chain(&epk).chain(&metadata).copied().collect();
         let digest: String = Sha256::digest(&blob)
@@ -824,7 +834,7 @@ mod tests {
             .collect();
         assert_eq!(
             digest,
-            "466f7268c590a20ac3771e416034fbc8d7e13b2af953ea9672466d61ceb89eca"
+            "b41b33fe1bfd55b23f7704ff9ee15d991ec1d5dd6a0d261752f4485068abc5ef"
         );
     }
 }

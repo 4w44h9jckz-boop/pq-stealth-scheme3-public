@@ -46,7 +46,7 @@ SEC1_COMPRESSED = 33      # secp256k1 point, SEC1 compressed, per §1
 VIEW_TAG = 1              # §3 rule 1: the FIRST BYTE of `metadata`, in EVERY announcement.
                           # One, everywhere; there is no confirm tag. It was eight until the
                           # announced `stealthAddress` was made the authoritative check
-                          # (§2.4 MUST) and the tag was narrowed to a prefilter.
+                          # (§2.5 MUST) and the tag was narrowed to a prefilter.
 SCALAR = 32               # a secp256k1 scalar, or a 32-byte seed
 SPENDING_PK = 33          # secp256k1, SEC1 compressed
 VIEWING_PK_EC = 33
@@ -54,17 +54,19 @@ VIEWING_PK_EC = 33
 # Each is stated as its construction so that a change to one field cannot leave a total
 # behind.
 ANNOUNCE_ERC = {
-    "schemeId 3 announcement":  (SEC1_COMPRESSED + VIEW_TAG + CT,     1_122),
+    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122),
 }
 
-# §2.4's shape is the PAIR of field lengths, not the total, and the distinction is
+# §3's shape is the PAIR of field lengths, not the total, and the distinction is
 # load-bearing: two schemes can share a total and still be distinguishable, because one puts
 # `ct` in `ephemeralPubKey` and the other in `metadata`. Modelling the total alone would
 # call that a collision.
 #
-# (`ephemeralPubKey`, `metadata`) per row.
+# (`ephemeralPubKey`, `metadata`) per row. `ct` rides in `ephemeralPubKey` after `epk`, so
+# `metadata` is ERC-5564's own: the view tag, which is all the reference sender emits. A
+# sender MAY append ERC-5564's 56-byte token block; that variant is not measured here.
 SHAPES = {
-    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),
+    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),
 }
 
 # The `schemeId` each shape belongs to, so the gas harness can address them. Stated here
@@ -78,7 +80,7 @@ SHAPE_SCHEME_ID = {
 # Pairs this tree declares indistinguishable by length. Asserted rather than left as a
 # coincidence, and any UNDECLARED pair sharing a shape is a failure -- recognition is by
 # `schemeId` plus the field lengths, so a collision is not a conformance defect, but one
-# that appeared without anyone writing it down would mean §2.4's recognition rule had gone
+# that appeared without anyone writing it down would mean §3's recognition rule had gone
 # stale. Empty here, and the detector below is what keeps it honest.
 DECLARED_SHAPE_COLLISIONS: list[tuple[str, str]] = []
 
@@ -157,7 +159,7 @@ def main() -> int:
         if derived != quoted:
             bad.append(f"{name}: derived {derived} != quoted {quoted}")
 
-    print("\nshapes are (ephemeralPubKey, metadata) -- the pair, which is what §2.4 "
+    print("\nshapes are (ephemeralPubKey, metadata) -- the pair, which is what §3 "
           "recognises on")
     for name, (epk_len, md_len) in SHAPES.items():
         total = epk_len + md_len
@@ -166,7 +168,7 @@ def main() -> int:
         print(f"  {name:<38}({epk_len:>4}, {md_len:>5})  = {total:>5} B   "
               f"spec {quoted:>5}   {mark}")
         if total != quoted:
-            bad.append(f"{name}: shape ({epk_len}, {md_len}) totals {total} != §2.4's {quoted}")
+            bad.append(f"{name}: shape ({epk_len}, {md_len}) totals {total} != §3's {quoted}")
 
     by_shape: dict[tuple[int, int], list[str]] = {}
     for name, shape in SHAPES.items():
@@ -179,10 +181,10 @@ def main() -> int:
             print(f"  declared collision at {shape}: {' == '.join(sorted(names))}   ok")
         else:
             bad.append(f"UNDECLARED shape collision at {shape}: {', '.join(sorted(names))} -- "
-                       f"record it in §2.4 and in DECLARED_SHAPE_COLLISIONS, or separate them")
+                       f"record it in §3 and in DECLARED_SHAPE_COLLISIONS, or separate them")
     for pair in DECLARED_SHAPE_COLLISIONS:
         if SHAPES[pair[0]] != SHAPES[pair[1]]:
-            bad.append(f"§2.4 declares {pair[0]} and {pair[1]} the same shape and they are "
+            bad.append(f"§3 declares {pair[0]} and {pair[1]} the same shape and they are "
                        f"{SHAPES[pair[0]]} and {SHAPES[pair[1]]}")
 
     print("\ndelegation components compared -- (len / 32), one per 32-byte component")

@@ -46,7 +46,7 @@ def synthetic() -> dict:
             "name": name,
             "scheme_id": scheme_id,
             "kind": kind,
-            "epk_bytes": epk,
+            "ephemeral_pub_key_bytes": epk,
             "metadata_bytes": md,
             "transaction": {
                 "calldata_bytes": calldata,

@@ -186,7 +186,7 @@ pub trait StealthScheme {
     /// stand in for "missing"; a parser that filled zeros would make §2.5 reject every payment.
     fn announcement_from_bytes(
         stealth_address: &[u8; 20],
-        epk: &[u8],
+        ephemeral_pub_key: &[u8],
         metadata: &[u8],
     ) -> Option<Self::Announcement>;
 }
