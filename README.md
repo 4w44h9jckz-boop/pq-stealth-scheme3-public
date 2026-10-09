@@ -64,21 +64,36 @@ For ML-KEM: the ciphertexts are of **NIST's own ACVP file**, vendored at `vector
 
 The specification here links this repository's files, which do not exist in
 [ethereum/ERCs](https://github.com/ethereum/ERCs). `tools/erc_submission.py` writes the copy that
-goes there: `ERCS/erc-N.md`, with other proposals linked as `./eip-N.md` and the copyright line
-linking `../LICENSE.md`, and `assets/erc-N/`, holding the vectors and their generator. It fails if
-any link would not resolve there, and runs `gen_vectors.py --check` on the copied assets.
-
-```bash
-python3 tools/erc_submission.py --number N --out path/to/ERCs --created yyyy-mm-dd
-```
-
-`discussions-to` already names the
+goes there, with other proposals linked as `./eip-N.md`, the copyright line linking
+`../LICENSE.md`, and the vectors and their generator as assets. It fails if any link would not
+resolve there, and runs `gen_vectors.py --check` on the copied assets. `discussions-to` already
+names the
 [Ethereum Magicians thread](https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923).
-Before opening the pull request:
 
-1. Use the number the editors assign. EIP-1 makes `created` the date of numbering.
-2. Add `nam` to the ERCs repository's `config/.codespell-whitelist` in the same pull request.
-   codespell otherwise reads the first author's name as a misspelling of "Name".
+The editors assign the number after the pull request is opened, so there are two stages. `--out`
+is a clone of your fork of ethereum/ERCs.
+
+1. **The draft.** This writes `ERCS/eip-draft_hybrid_pq_stealth_addresses.md`, with no `eip`
+   header, and `assets/erc-0/`, which is how unnumbered submissions are laid out:
+
+   ```bash
+   python3 tools/erc_submission.py --draft --out path/to/ERCs
+   ```
+
+   In the ERCs clone, add a line `nam` to `config/.codespell-whitelist`, since codespell otherwise
+   reads the first author's name as a misspelling of "Name". Commit, push to your fork, and open
+   a pull request against `master`. Until a number is assigned, the ERCs linter reports the
+   missing `eip` header.
+
+2. **Once an editor assigns N.** This writes `ERCS/erc-N.md` and `assets/erc-N/`. EIP-1 makes
+   `created` the date of numbering:
+
+   ```bash
+   python3 tools/erc_submission.py --number N --created yyyy-mm-dd --out path/to/ERCs
+   ```
+
+   Remove the draft files with the `git rm` line it prints, then push to the same pull request.
+   Retitle the Magicians thread `ERC-N: ...` and add the pull request to its opening post.
 
 ## Kohaku Integration PoC
 
