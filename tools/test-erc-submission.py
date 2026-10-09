@@ -28,9 +28,10 @@ def case(name: str, got, want) -> None:
         FAILED.append(name)
 
 
-def run(root: Path, out: Path, *extra: str) -> tuple[int, str]:
+def run(root: Path, out: Path, *extra: str, stage: tuple[str, ...] = ("--number", "9999")
+        ) -> tuple[int, str]:
     r = subprocess.run(
-        [sys.executable, str(TOOL), "--number", "9999", "--out", str(out), *extra, str(root)],
+        [sys.executable, str(TOOL), *stage, "--out", str(out), *extra, str(root)],
         capture_output=True, text=True,
     )
     return r.returncode, r.stdout + r.stderr
@@ -80,6 +81,36 @@ def main() -> int:
         case("without --discussions-to it keeps the specification's thread, and does not warn",
              (rc, "warning: `discussions-to`" in log), (0, False))
 
+    print("\nthe draft, before a number is assigned")
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "ercs"
+        rc, log = run(ROOT, out, stage=("--draft",))
+        case("builds", rc, 0)
+        doc = out / "ERCS" / es.DRAFT_DOC
+        text = doc.read_text(encoding="utf-8") if doc.is_file() else ""
+        preamble = text.split("\n---\n", 1)[0].split("\n")
+        case("named as the ERCs template asks", doc.is_file(), True)
+        case("has no `eip` header", [ln for ln in preamble if ln.startswith("eip:")], [])
+        case("keeps the specification's thread",
+             any(ln.startswith("discussions-to: https://ethereum-magicians.org/t/")
+                 for ln in preamble), True)
+        case("every repository link now points into assets/erc-0/",
+             [t for t in es.LINK.findall(text) if t.startswith("../") and t != es.LICENSE_THERE
+              and not t.startswith("../assets/erc-0/")], [])
+        assets = out / "assets" / es.DRAFT_ASSETS
+        case("every asset is a byte-for-byte copy under assets/erc-0/",
+             [p for p in es.ASSETS
+              if not (assets / p).is_file()
+              or (assets / p).read_bytes() != (ROOT / p).read_bytes()], [])
+        case("nothing numbered is written",
+             sorted(p.name for p in out.glob("*/erc-[1-9]*")), [])
+        rc, log = run(ROOT, out)
+        case("numbering it afterwards names the draft files to remove",
+             (rc, f"git rm -r ERCS/{es.DRAFT_DOC} assets/{es.DRAFT_ASSETS}" in log), (0, True))
+        rc, log = run(ROOT, Path(tmp) / "fresh")
+        case("numbering a tree with no draft names nothing to remove",
+             (rc, "git rm" in log), (0, False))
+
     print("\nwhat it must refuse")
     with tempfile.TemporaryDirectory() as tmp:
         root = tree(Path(tmp))
@@ -122,7 +153,8 @@ def main() -> int:
     print("\nusage")
     with tempfile.TemporaryDirectory() as tmp:
         for name, argv in (
-            ("no --number", ["--out", tmp]),
+            ("neither --draft nor --number", ["--out", tmp]),
+            ("both --draft and --number", ["--draft", "--number", "9999", "--out", tmp]),
             ("a non-integer --number", ["--number", "VVVV", "--out", tmp]),
             ("a zero --number", ["--number", "0", "--out", tmp]),
             ("a malformed --created", ["--number", "9999", "--out", tmp, "--created", "9/10/26"]),
