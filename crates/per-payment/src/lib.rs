@@ -233,6 +233,39 @@ fn add_points(spending: &CompressedPoint, offset: &Bytes32) -> Option<Compressed
 /// schemeId 3 combiner domain separator. §2.4.
 const DS_HYBRID: &[u8] = b"pq-stealth/hybrid-payment/v1";
 
+/// Ephemeral-scalar draws before [`SchemeId3::announce_random`] gives up. A uniform 32-byte
+/// draw is out of range with probability about 2⁻¹²⁸, so running out means the RNG is broken.
+const RANDOM_SCALAR_DRAWS: usize = 64;
+
+/// The rest of §2.4 once `esk` is chosen: ECDH, `encapsulate`, the §1.1 combiner, the address.
+fn finish_announcement(
+    meta: &MetaAddress,
+    esk: &Bytes32,
+    epk: CompressedPoint,
+    encapsulate: impl FnOnce(&[u8]) -> Result<(Vec<u8>, Bytes32), Error>,
+) -> Result<Announcement, Error> {
+    let viewing_pk_ec = meta.viewing_ec.ok_or(Error::Malformed)?;
+    let ss_ec = pqsa_ec::ecdh(esk, &viewing_pk_ec)?;
+    let (ct, ss_pq) = encapsulate(&meta.ek)?;
+    let ss = combine_secrets(
+        DS_HYBRID,
+        &ss_ec,
+        &ss_pq,
+        &epk,
+        &ct,
+        &viewing_pk_ec,
+        &meta.ek,
+    )?;
+    let (offset, view_tag) = derive_from_shared_secret(&ss)?;
+    let stealth = add_points(&meta.spending, &offset).ok_or(Error::Malformed)?;
+    Ok(Announcement {
+        epk: Some(epk),
+        ct,
+        view_tag,
+        stealth_address: pqsa_ec::address_of(&stealth),
+    })
+}
+
 impl StealthScheme for SchemeId3 {
     const SCHEME_ID: u64 = 3;
     const NAME: &'static str = "schemeId 3 (direct KEM, hybrid)";
@@ -279,37 +312,36 @@ impl StealthScheme for SchemeId3 {
         ))
     }
 
-    /// `ephemeral_seed(32) ‖ encap_seed(32)`, then the §1.1 combiner.
+    /// §2.4: `esk` from the operating system's CSPRNG, redrawn if it is not a valid scalar,
+    /// and `ML-KEM.Encaps(ek)`.
+    fn announce_random(meta: &MetaAddress) -> Result<Announcement, Error> {
+        let mut esk: Bytes32 = [0u8; 32];
+        for _ in 0..RANDOM_SCALAR_DRAWS {
+            pqsa_core::os_random(&mut esk)?;
+            match pqsa_ec::public_point(&esk) {
+                Ok(epk) => {
+                    return finish_announcement(meta, &esk, epk, MlKem768::encapsulate_random);
+                }
+                Err(Error::NoValidScalar) => continue,
+                Err(other) => return Err(other),
+            }
+        }
+        Err(Error::Rng)
+    }
+
+    /// `ephemeral_seed(32) ‖ encap_seed(32)`, then the §1.1 combiner. `encap_seed` is ML-KEM's
+    /// `m`, through `Encaps_internal`.
     fn announce(meta: &MetaAddress, seed: &[u8]) -> Result<Announcement, Error> {
         if seed.len() != Self::ANNOUNCE_SEED_BYTES {
             return Err(Error::Malformed);
         }
-        let viewing_pk_ec = meta.viewing_ec.ok_or(Error::Malformed)?;
         let esk: Bytes32 = seed[..32].try_into().map_err(|_| Error::Malformed)?;
         // Invalid ephemeral scalar is SeedRejected (retry the next index), not NoValidScalar.
         let epk = pqsa_ec::public_point(&esk).map_err(|e| match e {
             Error::NoValidScalar => Error::SeedRejected,
             other => other,
         })?;
-        let ss_ec = pqsa_ec::ecdh(&esk, &viewing_pk_ec)?;
-        let (ct, ss_pq) = MlKem768::encapsulate(&meta.ek, &seed[32..])?;
-        let ss = combine_secrets(
-            DS_HYBRID,
-            &ss_ec,
-            &ss_pq,
-            &epk,
-            &ct,
-            &viewing_pk_ec,
-            &meta.ek,
-        )?;
-        let (offset, view_tag) = derive_from_shared_secret(&ss)?;
-        let stealth = add_points(&meta.spending, &offset).ok_or(Error::Malformed)?;
-        Ok(Announcement {
-            epk: Some(epk),
-            ct,
-            view_tag,
-            stealth_address: pqsa_ec::address_of(&stealth),
-        })
+        finish_announcement(meta, &esk, epk, |ek| MlKem768::encapsulate(ek, &seed[32..]))
     }
 
     /// ECDH + decaps + combiner. `epk` and `ct` are fresh per announcement. The long-term
@@ -675,6 +707,24 @@ mod tests {
         assert_eq!(m.stealth_address, ann.stealth_address);
         assert!(SchemeId3::spend_key(&master, &m).is_ok());
     }
+    /// The §2.4 sender: a random announcement is found and spent by its recipient, and two
+    /// of them share nothing a scanner or an observer could link.
+    #[test]
+    fn a_random_announcement_round_trips_and_is_fresh() {
+        let (meta, master, tracking) = SchemeId3::keygen(&seed128()).unwrap();
+        let scanner = SchemeId3::bind(&tracking, &meta).unwrap();
+        let a = SchemeId3::announce_random(&meta).unwrap();
+        let b = SchemeId3::announce_random(&meta).unwrap();
+        for ann in [&a, &b] {
+            let m = SchemeId3::scan(&scanner, ann).expect("our own announcement must match");
+            assert_eq!(m.stealth_address, ann.stealth_address);
+            assert!(SchemeId3::spend_key(&master, &m).is_ok());
+        }
+        assert_ne!(a.epk, b.epk, "a repeated epk links two announcements");
+        assert_ne!(a.ct, b.ct, "a repeated ct means a repeated m");
+        assert_ne!(a.stealth_address, b.stealth_address);
+    }
+
     /// schemeId 3: mismatch on a foreign spending seed; same spending seed with other fields
     /// changed still spends.
     #[test]

@@ -5,22 +5,23 @@
 # describes. The full reference implementation carries more, and a reader
 # holding only this tree should not infer their contents from anything here.
 #
-# **Seven direct external crates**, each the obvious choice rather than a survey result. The four
+# **Eight direct external crates**, each the obvious choice rather than a survey result. The four
 # cryptographic ones:
 #
 #   * `k256`      secp256k1. The one the upstream reference uses, which matters because the
 #                 SEC1 `0x05` compact-tag hazard -- stated in §2.2 -- is a property of THIS
 #                 stack; a different curve library would not reproduce the defect it warns
 #                 about.
-#   * `ml-kem`    ML-KEM-768. §1 requires seed-form keygen (`KeyGen_internal`), and this
-#                 implementation's derived sender (§2.4) and the vectors need
+#   * `ml-kem`    ML-KEM-768. §1 requires seed-form keygen (`KeyGen_internal`), and the
+#                 vectors and this implementation's reproducible fixtures need
 #                 `Encaps_internal`, so a library exposing only `Encaps`/`KeyGen` would not do.
 #   * `sha2`      SHA-256, for the offset, the view tag and the payment secret.
 #   * `sha3`      SHA3-256 for the combiner, and Keccak-256 for the address. Both live here,
 #                 and the difference between them is ONE PADDING BYTE -- which is why §1 names
 #                 keccak256 and SHA3-256 separately and why a vector pins them apart.
 #
-# And the three others: `hkdf` (the wallet seed KDF), plus `hex` and `serde_json`, which
+# And the four others: `hkdf` (the wallet seed KDF), `getrandom` (the sender's CSPRNG), plus
+# `hex` and `serde_json`, which
 # move fixture bytes in and out of the conformance JSON and touch no cryptography. **Those
 # two are declared for
 # the crates that read fixtures**, so a workspace trimmed to crates that do not read them
@@ -79,6 +80,9 @@ sha3 = { version = "0.10", default-features = false }
 # hand-rolls it. Two hand-rolled copies by one author agreeing proves nothing; a hand-rolled one
 # agreeing with RustCrypto gives the regression pins an implementation-independent cross-check.
 hkdf = { version = "0.12", default-features = false }
+# The operating system's CSPRNG, for the sender's `esk` and ML-KEM's `m` (§2.4). Fallible,
+# so an RNG failure is an error rather than a panic.
+getrandom = { version = "0.4", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 

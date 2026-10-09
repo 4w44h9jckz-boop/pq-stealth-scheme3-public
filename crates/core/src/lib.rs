@@ -6,19 +6,16 @@
 //! **THE SEED DERIVATION IN THIS MODULE IS NOT SPECIFIED BY THE ERC**, and every item below
 //! that derives a seed from a master key -- [`keygen_seed`], [`SenderState`], `announce_seed`,
 //! `kem_id`, and their three domain separators -- is this implementation's choice rather than
-//! a normative requirement. What the ERC states is the seeds' SHAPE and the REQUIREMENTS a
-//! derivation must meet: the keygen seed is 128 bytes of independent components (§2.1), and
-//! each announcement gets fresh randomness, either drawn from a CSPRNG or derived from a
-//! secret by a PRF over a never-repeating, persisted index (§2.4). A wallet drawing from a
-//! CSPRNG conforms; so does this, which is one instance of §2.4's derived option.
+//! a normative requirement. What the ERC states is the keygen seed's SHAPE and the
+//! REQUIREMENTS its derivation must meet (§2.1), and that each announcement's randomness is
+//! drawn from a CSPRNG (§2.4).
 //!
-//! It is here because the demonstration and the payment harness need SOME reproducible source
-//! of seeds -- a receipt is only falsifiable if a reader can reproduce its input -- and because
-//! an index that advances is what makes reuse hard to do by accident.
-//!
-//! [`SenderState`] derives announce seeds and increments an index. Reusing a seed repeats
-//! the KEM ciphertext and the stealth address. [`StealthScheme::announce`] still takes raw
-//! `&[u8]`; using [`SenderState`] is convention, not enforced.
+//! The sender §2.4 describes is [`StealthScheme::announce_random`], which draws from the
+//! operating system through [`os_random`]. [`SenderState`] is NOT that sender: it is a
+//! deterministic generator, here because the vectors, the demonstration and the payment
+//! harness need a reproducible source of announce seeds -- a receipt is only falsifiable if a
+//! reader can reproduce its input. Reusing one of its seeds repeats the KEM ciphertext and the
+//! stealth address.
 
 use sha3::Shake256;
 use sha3::digest::{ExtendableOutput, Update, XofReader};
@@ -47,6 +44,9 @@ pub enum Error {
     SpendingKeyDelegated,
     /// Sender counter would wrap. Wrapping reuses a seed, which §2.4 forbids.
     CounterExhausted,
+    /// The operating system's random number generator failed, or returned 64 invalid scalars
+    /// in a row, which a working one does with probability about 2⁻⁸¹⁹². §2.4.
+    Rng,
     /// KEM rejected a malformed key or ciphertext. [`StealthScheme::scan`] maps this to [`None`].
     Kem,
     /// This announce seed is unusable; draw the next index. The only error a sender should retry.
@@ -76,8 +76,8 @@ pub type Keys<S> = (
 
 /// One stealth-address scheme. Vocabulary §1; wire §3, registry §2.2.
 ///
-/// Associated types vary by scheme. Keygen is deterministic in its seed; nothing here draws
-/// randomness. The `SCHEME_ID` values in this tree are proposals, not reserved with ERC-5564.
+/// Associated types vary by scheme. Keygen is deterministic in its seed. Only
+/// [`Self::announce_random`] draws randomness. The `SCHEME_ID` values in this tree are proposals, not reserved with ERC-5564.
 pub trait StealthScheme {
     /// ERC-5564 `schemeId` this scheme claims. Not reserved.
     const SCHEME_ID: u64;
@@ -119,10 +119,22 @@ pub trait StealthScheme {
     where
         Self: Sized;
 
-    /// Announce a payment to `meta` using `seed`.
+    /// Announce a payment to `meta` with randomness from the operating system's CSPRNG. §2.4.
     ///
-    /// `seed` should come from [`SenderState::draw_seed`]. This method does not enforce
-    /// that: the same seed twice yields the same announcement and stealth address.
+    /// This is the sender for real payments. An ephemeral scalar that is not valid is
+    /// discarded and drawn again.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Malformed`] on a meta-address this scheme does not accept, [`Error::Kem`] on
+    /// encapsulation failure, [`Error::Rng`] if the operating system's RNG fails.
+    fn announce_random(meta: &Self::Meta) -> Result<Self::Announcement, Error>;
+
+    /// Announce a payment to `meta` with the randomness fixed by `seed`. Deterministic.
+    ///
+    /// For test vectors and reproducible fixtures, with `seed` from [`SenderState::draw_seed`].
+    /// Real payments use [`Self::announce_random`]: §2.4 requires CSPRNG randomness, and the
+    /// same seed twice yields the same announcement and stealth address.
     ///
     /// # Errors
     ///
@@ -243,8 +255,10 @@ pub fn keygen_seed(
     Ok(out)
 }
 
-/// Per-sender announce-seed state: master and next unused index. Not from the ERC, which
-/// states requirements rather than a construction; this meets those of §2.4's derived option.
+/// Deterministic announce-seed generator: master and next unused index. Not from the ERC,
+/// and not the sender §2.4 describes, which draws from a CSPRNG
+/// ([`StealthScheme::announce_random`]). It makes the vectors and the gas harness's fixture
+/// reproducible.
 ///
 /// Persist both. Losing the counter and continuing reuses an index, which repeats a stealth
 /// address. [`StealthScheme::announce`] still accepts any `&[u8]`. Two `SenderState` values
@@ -353,6 +367,15 @@ impl SenderState {
         self.draw(scheme_id, scheme_name, n)
             .expect("the counter is not exhausted")
     }
+}
+
+/// Fill `dest` from the operating system's CSPRNG. §2.4.
+///
+/// # Errors
+///
+/// [`Error::Rng`] if the operating system's RNG fails.
+pub fn os_random(dest: &mut [u8]) -> Result<(), Error> {
+    getrandom::fill(dest).map_err(|_| Error::Rng)
 }
 
 /// Reject a keygen seed that would put the spending scalar in the delegated object. §2.1.
@@ -583,6 +606,9 @@ mod tests {
             type Scanner = ();
             type SpendKey = Bytes32;
             fn keygen(_: &[u8]) -> Result<Keys<Self>, Error> {
+                Err(Error::Malformed)
+            }
+            fn announce_random(_: &()) -> Result<(), Error> {
                 Err(Error::Malformed)
             }
             fn announce(_: &(), _: &[u8]) -> Result<(), Error> {

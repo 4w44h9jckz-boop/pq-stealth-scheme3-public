@@ -84,9 +84,9 @@ ML-KEM-768 is as specified in FIPS 203. This document uses it as follows:
   `(ek, dk) = ML-KEM.KeyGen_internal(d, z)` (FIPS 203 Algorithm 16). FIPS 203 §3.3 allows the
   seed to be stored in place of the decapsulation key. This document requires that
   representation, so a tracking key carries `(d, z)` and expands it when needed.
-- Encapsulation is FIPS 203 `ML-KEM.Encaps(ek)`. The deterministic
-  `ML-KEM.Encaps_internal(ek, m)` (Algorithm 17) is used only by a sender that derives its
-  randomness (Section 2.4) and for test vectors (Test Cases).
+- Encapsulation is FIPS 203 `ML-KEM.Encaps(ek)` (Algorithm 20). The deterministic
+  `ML-KEM.Encaps_internal(ek, m)` (Algorithm 17) is used only by the test vectors (Test Cases),
+  as FIPS 203 §3.3 permits.
 - Decapsulation is FIPS 203 `ML-KEM.Decaps(dk, ct)`, or `ML-KEM.Decaps_internal` on a `dk` that
   this implementation expanded itself. ML-KEM rejects implicitly: a well-formed ciphertext that
   was not made for `dk` decapsulates to a pseudorandom value, not to an error.
@@ -270,20 +270,10 @@ Freshness is per announcement, not per `schemeId`: it holds across recipients, a
 the two announcements to one sender. Reusing both against the same recipient also repeats `ss`,
 and with it the stealth address, which merges two payments onto one key.
 
-A sender MUST obtain this randomness in one of two ways:
-
-1. **Random (RECOMMENDED).** Draw 32 bytes from a CSPRNG. If they are not a valid scalar,
-   discard them and draw again; the result is `esk`. Encapsulate with `ML-KEM.Encaps(ek)`, which
-   draws its own randomness from the module's approved RBG (FIPS 203 §3.3).
-2. **Derived.** Compute a 64-byte announce seed
-   `ephemeral_seed(32) || encap_seed(32) = PRF(k, i)`. Here `k` is a secret of at least 256
-   bits used for nothing else, `PRF` is HKDF-SHA256 or SHAKE256 under a domain separator, and
-   `i` is an index that never repeats under `k`. The sender MUST store the advanced index durably
-   before it publishes the announcement. If `ephemeral_seed` is not a valid scalar, the sender
-   MUST move to the next index, and MUST NOT reduce the value mod `n` or retry the same index.
-   Set `esk = ephemeral_seed` and encapsulate with `ML-KEM.Encaps_internal(ek, encap_seed)`.
-   FIPS 203 §3.3 says the internal functions should not be exposed to applications except for
-   testing, so a FIPS-validated module will not offer this option.
+A sender MUST draw this randomness from a cryptographically secure random number generator.
+For `esk` it draws 32 bytes, and if they are not a valid scalar, discards them and draws again.
+For the encapsulation it calls `ML-KEM.Encaps(ek)`, whose randomness FIPS 203 §3.3 requires to
+come from an approved RBG with a security strength of at least 192 bits for ML-KEM-768.
 
 The sender then computes:
 
@@ -480,14 +470,16 @@ in ML-KEM libraries. `ek` commits to `d` but not to `z`. A scanner holding a wro
 finds every payment, because `z` only selects the implicit-rejection output for foreign
 ciphertexts.
 
-### Why encapsulation is not required to be deterministic
+### Why the sender's randomness is drawn, not derived
 
 The scanner only decapsulates, so the sender's source of randomness does not affect
-interoperability. FIPS 203 §3.3 says the internal functions should not be exposed to
-applications except for testing. Requiring `Encaps_internal` would therefore exclude
-FIPS-validated modules and most wallet and browser libraries. Determinism is kept only where it
-is needed: in test vectors, which must pin `ct`, and in the optional derived mode of Section
-2.4.
+interoperability, and the specification can pick the simplest safe source. A sender could
+instead derive `esk` and the encapsulation randomness from a secret and a counter, which makes
+announcements reproducible from a backup. That needs `Encaps_internal`, which FIPS 203 §3.3
+keeps for testing, so FIPS-validated modules and most wallet and browser libraries do not offer
+it. Its safety also rests on the counter never repeating, including after a restore from
+backup, and nothing on chain can check that. Drawing fresh randomness avoids both problems.
+Determinism stays where it is needed: in the test vectors, which must pin `ct`.
 
 ### Why key generation compares whole components
 
@@ -621,11 +613,12 @@ The reference implementation is [`crates/per-payment`](../crates/per-payment), b
 [`crates/kem`](../crates/kem) (ML-KEM-768, checked against NIST ACVP),
 [`crates/ec`](../crates/ec) and [`crates/core`](../crates/core). It passes every vector above.
 
-Its sender uses the derived option of Section 2.4. Seeds come from SHAKE256 over a 32-byte
-sender secret and a 64-bit index that the caller persists, and keygen seeds come from
-HKDF-SHA256. These
-constructions are one instance of the requirements in Sections 2.1 and 2.4, not part of the
-standard.
+Its sender, `announce_random`, draws `esk` and ML-KEM's `m` from the operating system's CSPRNG,
+as Section 2.4 requires. A second, seeded `announce` takes that randomness as input instead. It
+exists so that the vectors, the demonstration and the gas harness are reproducible, and it is
+not a sender for real payments. The harness feeds it seeds from SHAKE256 over a fixed secret
+and a counter. Keygen seeds come from HKDF-SHA256, which is one instance of the requirements in
+Section 2.1 and not part of the standard.
 
 The gas figures under Rationale come from [`harness/announcement`](../harness/announcement),
 [`harness/registration`](../harness/registration) and [`harness/payment`](../harness/payment).
@@ -701,9 +694,9 @@ key alone yields nothing. This follows from ERC-5564's additive derivation and i
 ### Sender randomness
 
 Section 2.4 states the consequences of reusing an announcement's randomness: linked
-announcements, and payments merged onto one key. A sender using the derived option depends on
-its index never repeating, including after a restore from backup. That is why the index must be
-stored before the announcement is published.
+announcements, and payments merged onto one key. A random number generator that repeats its
+output has the same effect, for example after a virtual machine snapshot is restored, or a
+weak one seeded at boot. A sender's security therefore rests on its random number generator.
 
 ### Downgrade
 

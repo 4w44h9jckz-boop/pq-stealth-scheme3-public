@@ -1,14 +1,16 @@
 //! ML-KEM-768 via RustCrypto `ml-kem`, derandomised. §1.
 //!
-//! Keygen is FIPS 203 `KeyGen_internal(d, z)`. Encapsulation is `Encaps_internal(ek, m)`:
+//! Keygen is FIPS 203 `KeyGen_internal(d, z)`. [`Kem::encapsulate`] is `Encaps_internal(ek, m)`:
 //! the 32-byte seed is the message `m`, so a fixture that pins `(ek, m)` pins `(ct, ss)`.
-//! This is not the public `Encaps` API (no RBG). Decapsulation is ordinary `Decapsulate`.
+//! [`Kem::encapsulate_random`] is the public `ML-KEM.Encaps(ek)` (FIPS 203 Algorithm 20): `m`
+//! from the operating system's CSPRNG, then `Encaps_internal`. Decapsulation is ordinary
+//! `Decapsulate`.
 
 use ml_kem::kem::Kem as MlKemTrait;
 use ml_kem::{Decapsulate, KeyExport, MlKem768 as MlKem768Params, Seed};
 use pqsa_core::{Bytes32, Error};
 
-/// Derandomised KEM. Sizes from FIPS 203 (`tools/derive_sizes.py`).
+/// KEM with seeded and random encapsulation. Sizes from FIPS 203 (`tools/derive_sizes.py`).
 pub trait Kem {
     /// Encapsulation-key length (1 184 for ML-KEM-768).
     const EK_BYTES: usize;
@@ -33,6 +35,19 @@ pub trait Kem {
     /// [`Error::Malformed`] if `seed` has the wrong length; [`Error::Kem`] if `ek` fails
     /// ML-KEM's encapsulation-key checks.
     fn encapsulate(ek: &[u8], seed: &[u8]) -> Result<(Vec<u8>, Bytes32), Error>;
+
+    /// `ML-KEM.Encaps(ek)`: [`Self::encapsulate`] with `m` from the operating system's CSPRNG.
+    /// The sender's encapsulation. §2.4.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Rng`] if the operating system's RNG fails; [`Error::Kem`] if `ek` fails
+    /// ML-KEM's encapsulation-key checks.
+    fn encapsulate_random(ek: &[u8]) -> Result<(Vec<u8>, Bytes32), Error> {
+        let mut m = vec![0u8; Self::ENCAP_SEED_BYTES];
+        pqsa_core::os_random(&mut m)?;
+        Self::encapsulate(ek, &m)
+    }
 
     /// Decapsulate `ct` under the 64-byte `(d, z)` seed.
     ///
