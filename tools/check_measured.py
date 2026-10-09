@@ -28,7 +28,7 @@ REGISTRY_SHA256 = "aacd1016938b107361de63f20c358350de9f78fa6033b7727853f0229c94b
 # Files this tool reads for quoted gas numbers.
 # `docs/*.md` and `AUDIT.md` are unused in this tree; keep the globs so they
 # are covered if those paths come back.
-GAS_DOCS = ("docs/*.md", "AUDIT.md", "spec/ERC-*.md", "README.md",
+GAS_DOCS = ("docs/*.md", "AUDIT.md", "spec/*.md", "README.md",
             "harness/*/README.md")
 GAS_DOCS_ALL = GAS_DOCS
 

@@ -25,6 +25,7 @@ Scheme 3 is **2.45x in gas** (69 330 against 28 313) and is paid every time.
 | path | what it is |
 |---|---|
 | `spec/ERC-VVVV-schemeid3.md` | the specification and ERC *starter* |
+| `spec/ethereum-magicians-post.md` | a draft of the Ethereum Magicians discussion thread |
 | `crates/core` | the `StealthScheme` trait |
 | `crates/ec` | secp256k1: SEC1 decoding, ECDH, scalar and point addition, the address |
 | `crates/kem` | ML-KEM-768, over `ml-kem`, checked against NIST's own ACVP cases |

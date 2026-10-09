@@ -86,8 +86,8 @@ ML-KEM-768 is as specified in FIPS 203. This document uses it as follows:
 - Encapsulation is FIPS 203 `ML-KEM.Encaps(ek)` (Algorithm 20). The deterministic
   `ML-KEM.Encaps_internal(ek, m)` (Algorithm 17) is used only by the test vectors (Test Cases),
   as FIPS 203 §3.3 permits.
-- Decapsulation is FIPS 203 `ML-KEM.Decaps(dk, ct)`, or `ML-KEM.Decaps_internal` on a `dk` that
-  this implementation expanded itself. ML-KEM rejects implicitly: a well-formed ciphertext that
+- Decapsulation is FIPS 203 `ML-KEM.Decaps(dk, ct)`, or `ML-KEM.Decaps_internal` on a `dk` the
+  scanner expanded itself from `(d, z)`. ML-KEM rejects implicitly: a well-formed ciphertext that
   was not made for `dk` decapsulates to a pseudorandom value, not to an error.
 
 **Offset and view tag.** From the 32-byte payment secret `ss` of Section 1.1:
