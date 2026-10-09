@@ -32,7 +32,7 @@ Scheme 3 is **2.45x in gas** (69 330 against 28 313) and is paid every time.
 | `crates/per-payment` | the scheme itself |
 | `vectors/` | the fixtures saying what each row pins and which wrong output it distinguishes |
 | `harness/` | the gas harnesses: real transactions against a real node, with their receipts |
-| `tools/` | fixture generation, size derivation, and offline snapshot/document checks |
+| `tools/` | fixture generation, size derivation, offline snapshot/document checks, and the ERCs-repository build |
 | `contracts/` | a readable ERC-5564 announcer source counterpart; the harness pins deployed runtime bytes |
 
 ## Tests
@@ -44,7 +44,7 @@ python3 tools/run_selftests.py
 python3 tools/gen_vectors.py --check
 ```
 
-`run_selftests.py` runs the three `tools/test-*.py` scripts (sizes, vector generator, snapshot and docs). `gen_vectors.py --check` regenerates `vectors/` and compares it to what is committed. `check_measured.py` is included in `run_selftests.py`.
+`run_selftests.py` runs the four `tools/test-*.py` scripts (sizes, vector generator, snapshot and docs, ERCs-repository build). `gen_vectors.py --check` regenerates `vectors/` and compares it to what is committed. `check_measured.py` is included in `run_selftests.py`.
 
 Gas, against a local Anvil node:
 
@@ -56,6 +56,27 @@ The fixtures are generated from `tools/vecprim.py`,
 which is **independent** from the reference implementation that they test. 
 spec_vector.rs (implementing the test vectors) in per_payment matches the two implementation outputs for additional correctness check.
 For ML-KEM: the ciphertexts are of **NIST's own ACVP file**, vendored at `vectors/tier1/`.
+
+## Submitting to the ERCs repository
+
+The specification here links this repository's files, which do not exist in
+[ethereum/ERCs](https://github.com/ethereum/ERCs). `tools/erc_submission.py` writes the copy that
+goes there: `ERCS/erc-N.md`, with other proposals linked as `./eip-N.md` and the copyright line
+linking `../LICENSE.md`, and `assets/erc-N/`, holding the vectors and their generator. It fails if
+any link would not resolve there, and runs `gen_vectors.py --check` on the copied assets.
+
+```bash
+python3 tools/erc_submission.py --number N --out path/to/ERCs \
+    --discussions-to https://ethereum-magicians.org/t/... --created yyyy-mm-dd
+```
+
+Before opening the pull request:
+
+1. Open the Ethereum Magicians thread from `spec/ethereum-magicians-post.md` and pass its URL as
+   `--discussions-to`.
+2. Use the number the editors assign. EIP-1 makes `created` the date of numbering.
+3. Add `nam` to the ERCs repository's `config/.codespell-whitelist` in the same pull request.
+   codespell otherwise reads the first author's name as a misspelling of "Name".
 
 ## Kohaku Integration PoC
 

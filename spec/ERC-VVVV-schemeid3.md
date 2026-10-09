@@ -521,14 +521,13 @@ has no fixture, so its rows use constructed payloads of the same lengths with no
 | schemeId | `ephemeralPubKey` + `metadata` | calldata | gas | pricing rule | vs classical |
 |---|---|---|---|---|---|
 | 1 (classical) | 34 B | 292 B | 28 313 | standard | 1.00x |
-| 3 | 1 122 B | 1 380 B | 69 330 | EIP-7623 floor | 2.45x |
+| 3 | 1 122 B | 1 380 B | 69 330 | [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623) floor | 2.45x |
 | 3, with token metadata | 1 178 B | 1 412 B | 70 550 | EIP-7623 floor | 2.49x |
 
-The `schemeId` 3 receipt equals the [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623)
-calldata floor exactly: 21 000 plus 10 per calldata token. So execution is not charged, and the
-figure is set by calldata size alone. The classical receipt is above its floor and pays the
-standard rate. The ratios therefore compare two pricing rules, and any calldata repricing will
-move them. The first `schemeId` 3 row carries the view tag alone in `metadata`. The second
+The `schemeId` 3 receipt equals the EIP-7623 calldata floor exactly: 21 000 plus 10 per
+calldata token. So execution is not charged, and the figure is set by calldata size alone. The
+classical receipt is above its floor and pays the standard rate. The ratios therefore compare
+two pricing rules, and any calldata repricing will move them. The first `schemeId` 3 row carries the view tag alone in `metadata`. The second
 appends ERC-5564's 56-byte native-token metadata for 1 ETH, which Section 3 allows, and costs
 1 220 gas more.
 
@@ -572,17 +571,23 @@ assumes the length of `schemeId` 1's must dispatch on `schemeId` first.
 
 ## Test Cases
 
-Conformance vectors are in [`vectors/`](../vectors/). [`vectors/PLAN.md`](../vectors/PLAN.md)
-states, for each row, the requirement it pins and the wrong output it distinguishes.
+Conformance vectors are in the two files below, with a SHA-256 digest of each in
+[`vectors/manifest.json`](../vectors/manifest.json).
+[`vectors/PLAN.md`](../vectors/PLAN.md) states, for each row, the requirement it pins and the
+wrong output it distinguishes.
 
 | file | rows | what it pins |
 |---|---|---|
-| [`section-1.json`](../vectors/section-1.json) | 6 | Section 1: the offset, its range check, byte order and the view tag |
-| [`section-2.json`](../vectors/section-2.json) | 19 | Section 2: keys and seeds, the meta-address, the combiner and its bindings, the address, the wire mapping, and what counts as a skip |
+| [`vectors/section-1.json`](../vectors/section-1.json) | 6 | Section 1: the offset, its range check, byte order and the view tag |
+| [`vectors/section-2.json`](../vectors/section-2.json) | 19 | Section 2: keys and seeds, the meta-address, the combiner and its bindings, the address, the wire mapping, and what counts as a skip |
 
-The generator, [`tools/gen_vectors.py`](../tools/gen_vectors.py), imports nothing from the
-reference implementation. ML-KEM values come from NIST's ACVP files, vendored at
-[`vectors/tier1/`](../vectors/tier1/).
+The generator, [`tools/gen_vectors.py`](../tools/gen_vectors.py), does its arithmetic in
+[`tools/vecprim.py`](../tools/vecprim.py) and imports nothing from the reference
+implementation. ML-KEM values come from NIST's ACVP files, vendored at
+[`vectors/tier1/ml-kem-768-acvp.json`](../vectors/tier1/ml-kem-768-acvp.json). Running
+`python3 tools/gen_vectors.py --check` in the directory that holds `vectors/` and `tools/`
+re-derives every vector and compares it with the files above. It needs only the Python standard
+library.
 
 Three conventions apply to the vectors:
 
@@ -610,9 +615,10 @@ V1-03  base     = 00000000000000000000000000000000000000000000000000000000000000
 
 ## Reference Implementation
 
-The reference implementation is [`crates/per-payment`](../crates/per-payment), built on
-[`crates/kem`](../crates/kem) (ML-KEM-768, checked against NIST ACVP),
-[`crates/ec`](../crates/ec) and [`crates/core`](../crates/core). It passes every vector above.
+The reference implementation is a Rust workspace in the repository linked from the discussion
+thread. Its `per-payment` crate implements this scheme on three others: `kem` (ML-KEM-768,
+checked against NIST ACVP), `ec` (secp256k1) and `core` (the interface the scheme implements).
+It passes every vector above.
 
 Its sender, `announce_random`, draws `esk` and ML-KEM's `m` from the operating system's CSPRNG,
 as Section 2.4 requires. A second, seeded `announce` takes that randomness as input instead. It
@@ -621,9 +627,9 @@ not a sender for real payments. The harness feeds it seeds from SHAKE256 over a 
 and a counter. Keygen seeds come from HKDF-SHA256, which is one instance of the requirements in
 Section 2.1 and not part of the standard.
 
-The gas figures under Rationale come from [`harness/announcement`](../harness/announcement),
-[`harness/registration`](../harness/registration) and [`harness/payment`](../harness/payment).
-Each harness commits its receipts as `measured.json`.
+The gas figures under Rationale come from three harnesses in the same repository: one for the
+announcement, one for the registration and one for the whole payment. Each commits its receipts
+as `measured.json`.
 
 The implementation has had no external cryptographic review, and no party outside this project
 has re-derived any vector.

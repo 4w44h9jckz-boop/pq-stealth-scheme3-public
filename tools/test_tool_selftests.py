@@ -35,6 +35,9 @@ class ToolSelfTests(unittest.TestCase):
     def test_check_measured(self) -> None:
         self.run_script("test-check-measured.py")
 
+    def test_erc_submission(self) -> None:
+        self.run_script("test-erc-submission.py")
+
 
 if __name__ == "__main__":
     unittest.main()
