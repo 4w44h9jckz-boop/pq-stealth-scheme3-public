@@ -20,6 +20,8 @@ for a 66 B registration. The registry entry is **18.9x the classical one in byte
 against 66) and is paid once per `schemeId`. Against that classical baseline,
 Scheme 3 is **2.45x in gas** (69 330 against 28 313) and is paid every time.
 
+See further on [ethresearch](https://ethresear.ch/t/pq-anonymity-for-stealth-address-protocol/26094)
+
 ## What is here
 
 | path | what it is |
@@ -80,7 +82,9 @@ Before opening the pull request:
 
 ## Kohaku Integration PoC
 
-[Kohaku Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)
+[Kohaku-ts Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)
+
+[Kohaku-rs Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq-rs/tree/feat/kohaku-stealth/crates/stealth)
 
 ## Demo
 
@@ -88,8 +92,11 @@ Before opening the pull request:
 
 [Demo](https://0xakk0r0kamui.github.io/pq-stealth-scheme3-demo/)
 
-The plugin and the demo predate the current wire layout. They put `ct` in `metadata`, so their
-announcements do not interoperate with this tree's until they move `ct` into `ephemeralPubKey`.
+[CLI](https://github.com/0xakk0r0kamui/pq-stealth-scheme3-demo-cli)
+
+The TypeScript plugin and the demo predate the current wire layout. They put `ct` in `metadata`,
+so their announcements do not interoperate with this tree's until they move `ct` into
+`ephemeralPubKey`.
 
 ## Licence
 
