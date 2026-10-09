@@ -9,9 +9,11 @@ so DIR can be one. Exit 0 on success, 1 if the result would not stand in that re
 usage error.
 
 TWO STAGES. The editors assign the number after the pull request is opened.
-`--draft` writes the first submission the way the ERCs template and recent unnumbered
-submissions do: `ERCS/eip-draft_hybrid_pq_stealth_addresses.md` with no `eip` header, and its
-assets under `assets/erc-0/`. The ERCs linter reports the missing number until one is assigned.
+`--draft` writes the first submission as `ERCS/erc-0.md`, with no `eip` header, and its assets
+under `assets/erc-0/`. Not the template's `eip-draft_<title>.md`: the ERCs linter workflow
+(eipw-action) reads the proposal number from the file name, and aborts on any name whose part
+after the first `-` is not a number. With `erc-0.md` it runs, and reports only the missing
+`eip` header until a number is assigned.
 `--number N` then writes `ERCS/erc-N.md` and `assets/erc-N/`, and names the draft files to
 remove if DIR still has them.
 
@@ -43,7 +45,7 @@ from pathlib import Path
 SPEC = Path("spec/ERC-VVVV-schemeid3.md")
 PLACEHOLDER = "VVVV"
 # The names an unnumbered submission takes in the ERCs repository.
-DRAFT_DOC = "eip-draft_hybrid_pq_stealth_addresses.md"
+DRAFT_DOC = "erc-0.md"
 DRAFT_ASSETS = "erc-0"
 
 # Every file the specification links in this repository, and nothing else. A link to a file
