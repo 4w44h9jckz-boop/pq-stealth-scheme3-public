@@ -73,9 +73,9 @@ names the
 The editors assign the number after the pull request is opened, so there are two stages. `--out`
 is a clone of your fork of ethereum/ERCs.
 
-1. **The draft.** This writes `ERCS/erc-0.md`, with no `eip` header, and `assets/erc-0/`. The
-   template's `eip-draft_<title>.md` name stops the ERCs linter workflow, which reads the
-   proposal number from the file name:
+1. **The draft.** This writes `ERCS/erc-0.md` with `eip: 0`, and `assets/erc-0/`. The template's
+   `eip-draft_<title>.md` with no `eip` header fails the ERCs linter, which reads the number from
+   the file name and requires the header to match it. 0 claims no real number:
 
    ```bash
    python3 tools/erc_submission.py --draft --out path/to/ERCs
@@ -83,8 +83,7 @@ is a clone of your fork of ethereum/ERCs.
 
    In the ERCs clone, add a line `nam` to `config/.codespell-whitelist`, since codespell otherwise
    reads the first author's name as a misspelling of "Name". Commit, push to your fork, and open
-   a pull request against `master`. Until a number is assigned, the ERCs linter reports the
-   missing `eip` header.
+   a pull request against `master`.
 
 2. **Once an editor assigns N.** This writes `ERCS/erc-N.md` and `assets/erc-N/`. EIP-1 makes
    `created` the date of numbering:

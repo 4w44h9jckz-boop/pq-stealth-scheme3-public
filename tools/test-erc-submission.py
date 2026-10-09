@@ -91,7 +91,8 @@ def main() -> int:
         preamble = text.split("\n---\n", 1)[0].split("\n")
         case("named erc-0.md, which the ERCs linter workflow can read a number from",
              doc.is_file(), True)
-        case("has no `eip` header", [ln for ln in preamble if ln.startswith("eip:")], [])
+        case("numbered 0, matching its file name",
+             [ln for ln in preamble if ln.startswith("eip:")], ["eip: 0"])
         case("keeps the specification's thread",
              any(ln.startswith("discussions-to: https://ethereum-magicians.org/t/")
                  for ln in preamble), True)

@@ -9,11 +9,11 @@ so DIR can be one. Exit 0 on success, 1 if the result would not stand in that re
 usage error.
 
 TWO STAGES. The editors assign the number after the pull request is opened.
-`--draft` writes the first submission as `ERCS/erc-0.md`, with no `eip` header, and its assets
-under `assets/erc-0/`. Not the template's `eip-draft_<title>.md`: the ERCs linter workflow
-(eipw-action) reads the proposal number from the file name, and aborts on any name whose part
-after the first `-` is not a number. With `erc-0.md` it runs, and reports only the missing
-`eip` header until a number is assigned.
+`--draft` writes the first submission as number 0: `ERCS/erc-0.md` with `eip: 0`, and its assets
+under `assets/erc-0/`. Not the template's `eip-draft_<title>.md` with no `eip` header: the ERCs
+linter workflow (eipw-action) reads the proposal number from the file name and aborts on any
+name whose part after the first `-` is not a number, and eipw itself requires the header and
+its match with the file name. Number 0 claims no real number and passes both.
 `--number N` then writes `ERCS/erc-N.md` and `assets/erc-N/`, and names the draft files to
 remove if DIR still has them.
 
@@ -44,9 +44,10 @@ from pathlib import Path
 
 SPEC = Path("spec/ERC-VVVV-schemeid3.md")
 PLACEHOLDER = "VVVV"
-# The names an unnumbered submission takes in the ERCs repository.
-DRAFT_DOC = "erc-0.md"
-DRAFT_ASSETS = "erc-0"
+# The number an unnumbered submission takes in the ERCs repository, and its names there.
+DRAFT_NUMBER = 0
+DRAFT_DOC = f"erc-{DRAFT_NUMBER}.md"
+DRAFT_ASSETS = f"erc-{DRAFT_NUMBER}"
 
 # Every file the specification links in this repository, and nothing else. A link to a file
 # not listed here is reported, not copied: an asset is something the editors review.
@@ -81,11 +82,11 @@ def set_header(preamble: list[str], name: str, value: str) -> bool:
     return False
 
 
-def convert(text: str, number: int | None, discussions_to: str | None,
+def convert(text: str, number: int, discussions_to: str | None,
             created: str | None) -> tuple[str, list[str]]:
     """The ERCs-repository text, and what stops it standing there (empty if nothing).
 
-    `number` None is the draft: no `eip` header, and assets under `assets/erc-0/`."""
+    `number` 0 is the draft."""
     problems: list[str] = []
     lines = text.split("\n")
     if lines[0] != "---" or "---" not in lines[1:]:
@@ -94,10 +95,7 @@ def convert(text: str, number: int | None, discussions_to: str | None,
     preamble = lines[1:end]
     if f"eip: {PLACEHOLDER}" not in preamble:
         problems.append(f"preamble has no `eip: {PLACEHOLDER}` line to number")
-    if number is None:
-        preamble = [ln for ln in preamble if not ln.startswith("eip:")]
-    else:
-        set_header(preamble, "eip", str(number))
+    set_header(preamble, "eip", str(number))
     if discussions_to is not None and not set_header(preamble, "discussions-to", discussions_to):
         problems.append("preamble has no `discussions-to` header")
     if created is not None and not set_header(preamble, "created", created):
@@ -106,7 +104,7 @@ def convert(text: str, number: int | None, discussions_to: str | None,
 
     body = EIP_URL.sub(r"(./eip-\1.md)", body)
     body = body.replace(f"]({LICENSE_HERE})", f"]({LICENSE_THERE})")
-    prefix = f"../assets/{DRAFT_ASSETS if number is None else f'erc-{number}'}/"
+    prefix = f"../assets/erc-{number}/"
     for path in ASSETS:
         body = body.replace(f"](../{path})", f"]({prefix}{path})")
     out = "\n".join(["---", *preamble, "---"]) + "\n" + body
@@ -147,8 +145,9 @@ def main(argv: list[str]) -> int:
     if missing:
         ap.error(f"not in {root}: {', '.join(missing)}")
 
+    number = DRAFT_NUMBER if args.draft else args.number
     text = (root / SPEC).read_text(encoding="utf-8")
-    out, problems = convert(text, args.number, args.discussions_to, args.created)
+    out, problems = convert(text, number, args.discussions_to, args.created)
     if problems:
         print("FAIL: the converted specification would not stand in the ERCs repository:",
               file=sys.stderr)
@@ -156,12 +155,8 @@ def main(argv: list[str]) -> int:
             print(f"  {p}", file=sys.stderr)
         return 1
 
-    if args.draft:
-        erc = args.out / "ERCS" / DRAFT_DOC
-        assets = args.out / "assets" / DRAFT_ASSETS
-    else:
-        erc = args.out / "ERCS" / f"erc-{args.number}.md"
-        assets = args.out / "assets" / f"erc-{args.number}"
+    erc = args.out / "ERCS" / f"erc-{number}.md"
+    assets = args.out / "assets" / f"erc-{number}"
     erc.parent.mkdir(parents=True, exist_ok=True)
     erc.write_text(out, encoding="utf-8")
     for path in ASSETS:
