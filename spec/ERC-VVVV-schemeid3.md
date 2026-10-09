@@ -650,13 +650,19 @@ without decrypting anything. `schemeId` 3 therefore assumes that ML-KEM-768 is A
 (anonymous under chosen-ciphertext attack) as well as IND-CCA. FIPS 203 does not claim
 anonymity.
 
-The published analyses cover round-3 Kyber. Grubbs, Maram and Paterson ("Anonymous, Robust
+The peer-reviewed analyses cover round-3 Kyber. Grubbs, Maram and Paterson ("Anonymous, Robust
 Post-Quantum Public Key Encryption", EUROCRYPT 2022) and Xagawa ("Anonymity of NIST PQC Round 3
 KEMs", EUROCRYPT 2022) studied the round-3 candidates. Maram and Xagawa ("Post-Quantum Anonymity
 of Kyber", PKC 2023) prove that round-3 Kyber is ANO-CCA in the quantum random-oracle model.
-FIPS 203 changed how ML-KEM derives its shared key: it no longer hashes the ciphertext in. The
-authors of this document know of no published anonymity proof for ML-KEM exactly as
-standardised, so the assumption is stated here rather than inherited.
+FIPS 203 changed how ML-KEM derives its shared key: it no longer hashes the ciphertext in.
+
+CRYPTREC's evaluation of ML-KEM (PQShield, CRYPTREC-EX-3502-2025, Section 4) states that the
+arguments of Xagawa and of Grubbs, Maram and Paterson, though written for Kyber, hold for ML-KEM
+as well. They give anonymity in the quantum random-oracle model when ML-KEM is used with a
+symmetric scheme, provided ML-KEM is strongly collision-free CCA secure and its underlying
+K-PKE is strongly disjoint-simulatable and correct. The authors of this document know of no
+peer-reviewed paper that writes the proof out for ML-KEM itself, so anonymity is stated here as
+an assumption rather than inherited.
 
 The other announcement fields reveal nothing about the recipient, as long as `ss` stays secret.
 `epk` is independent of the recipient's keys. The view tag and `stealthAddress` are functions of
