@@ -73,8 +73,9 @@ names the
 The editors assign the number after the pull request is opened, so there are two stages. `--out`
 is a clone of your fork of ethereum/ERCs.
 
-1. **The draft.** This writes `ERCS/eip-draft_hybrid_pq_stealth_addresses.md`, with no `eip`
-   header, and `assets/erc-0/`, which is how unnumbered submissions are laid out:
+1. **The draft.** This writes `ERCS/erc-0.md`, with no `eip` header, and `assets/erc-0/`. The
+   template's `eip-draft_<title>.md` name stops the ERCs linter workflow, which reads the
+   proposal number from the file name:
 
    ```bash
    python3 tools/erc_submission.py --draft --out path/to/ERCs

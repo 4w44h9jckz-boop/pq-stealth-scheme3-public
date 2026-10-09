@@ -89,7 +89,8 @@ def main() -> int:
         doc = out / "ERCS" / es.DRAFT_DOC
         text = doc.read_text(encoding="utf-8") if doc.is_file() else ""
         preamble = text.split("\n---\n", 1)[0].split("\n")
-        case("named as the ERCs template asks", doc.is_file(), True)
+        case("named erc-0.md, which the ERCs linter workflow can read a number from",
+             doc.is_file(), True)
         case("has no `eip` header", [ln for ln in preamble if ln.startswith("eip:")], [])
         case("keeps the specification's thread",
              any(ln.startswith("discussions-to: https://ethereum-magicians.org/t/")
