@@ -3,7 +3,7 @@
 
 **What it covers, and what it does not.** It checks the figures listed in its own tables:
 the announcement payloads and their field splits, the meta-addresses, the registration
-ratios, and the delegation window counts. **It does not scan the documents for figures it
+ratios, and the delegation component count. **It does not scan the documents for figures it
 has not been told about** -- so a new byte figure is unchecked until someone adds it here,
 and the closing line says so rather than claiming "every quoted figure"; that claim over
 partial coverage would be an overclaimed figure inside the harness built to remove
@@ -46,25 +46,34 @@ SEC1_COMPRESSED = 33      # secp256k1 point, SEC1 compressed, per §1
 VIEW_TAG = 1              # §3 rule 1: the FIRST BYTE of `metadata`, in EVERY announcement.
                           # One, everywhere; there is no confirm tag. It was eight until the
                           # announced `stealthAddress` was made the authoritative check
-                          # (§2.4 MUST) and the tag was narrowed to a prefilter.
+                          # (§2.5 MUST) and the tag was narrowed to a prefilter.
 SCALAR = 32               # a secp256k1 scalar, or a 32-byte seed
+# ERC-5564's recommended token metadata after the view tag: a 4-byte function selector, a
+# 20-byte token address and a 32-byte amount. Optional in `schemeId` 3 (§3 rule 3).
+TOKEN_METADATA = 4 + 20 + 32
 SPENDING_PK = 33          # secp256k1, SEC1 compressed
 VIEWING_PK_EC = 33
 
 # Each is stated as its construction so that a change to one field cannot leave a total
 # behind.
 ANNOUNCE_ERC = {
-    "schemeId 3 announcement":  (SEC1_COMPRESSED + VIEW_TAG + CT,     1_122),
+    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122),
+    "schemeId 3 announcement, token metadata":
+        (SEC1_COMPRESSED + CT + VIEW_TAG + TOKEN_METADATA,            1_178),
 }
 
-# §2.4's shape is the PAIR of field lengths, not the total, and the distinction is
+# §3's shape is the PAIR of field lengths, not the total, and the distinction is
 # load-bearing: two schemes can share a total and still be distinguishable, because one puts
 # `ct` in `ephemeralPubKey` and the other in `metadata`. Modelling the total alone would
 # call that a collision.
 #
-# (`ephemeralPubKey`, `metadata`) per row.
+# (`ephemeralPubKey`, `metadata`) per row. `ct` rides in `ephemeralPubKey` after `epk`, so
+# `metadata` is ERC-5564's own: the view tag, which is all the reference sender emits, and
+# optionally ERC-5564's token metadata after it.
 SHAPES = {
-    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),
+    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),
+    "schemeId 3 announcement, token metadata":
+        (SEC1_COMPRESSED + CT,  VIEW_TAG + TOKEN_METADATA),
 }
 
 # The `schemeId` each shape belongs to, so the gas harness can address them. Stated here
@@ -73,26 +82,30 @@ SHAPES = {
 # scheme.
 SHAPE_SCHEME_ID = {
     "schemeId 3 announcement": 3,
+    "schemeId 3 announcement, token metadata": 3,
 }
 
 # Pairs this tree declares indistinguishable by length. Asserted rather than left as a
 # coincidence, and any UNDECLARED pair sharing a shape is a failure -- recognition is by
 # `schemeId` plus the field lengths, so a collision is not a conformance defect, but one
-# that appeared without anyone writing it down would mean §2.4's recognition rule had gone
+# that appeared without anyone writing it down would mean §3's recognition rule had gone
 # stale. Empty here, and the detector below is what keeps it honest.
 DECLARED_SHAPE_COLLISIONS: list[tuple[str, str]] = []
 
-# The delegation window scans. Both were the subject of a security fix: the scan is over the
-# WHOLE delegated object, so the count is (len - 32 + 1) and not (len / 32).
+# The delegation guard of §2.1 compares `spending_seed` with each 32-byte COMPONENT of the
+# tracking key -- `viewing_ec_seed`, `d`, `z` -- so the count is (len / 32). It used to scan
+# every 32-byte window, (len - 32 + 1) = 65 of them; the windows that straddle a component
+# boundary can only match under a derivation that is already broken, so they were dropped in
+# favour of the independence requirement that actually covers that case.
 DELEGATION = {
-    "schemeId 3 (viewing_ec(32) || kem_seed(64) = 96 B)": (96 - SCALAR + 1, 65),
+    "schemeId 3 (viewing_ec(32) || d(32) || z(32) = 96 B)": (96 // SCALAR, 3),
 }
 
 META = {
     "schemeId 3": (SPENDING_PK + VIEWING_PK_EC + EK,   1_250),
 }
 
-# §4's registration table. `schemeId 1`'s 66 B is ERC-5564's own meta-address -- two
+# The registration table under Rationale, Cost. `schemeId 1`'s 66 B is ERC-5564's own meta-address -- two
 # SEC1-compressed points -- and is the baseline every ratio in that column is against. The
 # ratios are checked here rather than trusted because they are the only figures in that
 # table nobody measured OR quoted from elsewhere: they were computed while writing it, which
@@ -150,20 +163,20 @@ def main() -> int:
     print("\nthe announcement payloads, from the same primitives")
     for name, (derived, quoted) in ANNOUNCE_ERC.items():
         mark = "ok" if derived == quoted else "MISMATCH"
-        print(f"  {name:<28}{derived:>6} B   spec {quoted:>6}   {mark}")
+        print(f"  {name:<42}{derived:>6} B   spec {quoted:>6}   {mark}")
         if derived != quoted:
             bad.append(f"{name}: derived {derived} != quoted {quoted}")
 
-    print("\nshapes are (ephemeralPubKey, metadata) -- the pair, which is what §2.4 "
+    print("\nshapes are (ephemeralPubKey, metadata) -- the pair, which is what §3 "
           "recognises on")
     for name, (epk_len, md_len) in SHAPES.items():
         total = epk_len + md_len
         quoted = ANNOUNCE_ERC[name][1]
         mark = "ok" if total == quoted else "MISMATCH"
-        print(f"  {name:<38}({epk_len:>4}, {md_len:>5})  = {total:>5} B   "
+        print(f"  {name:<42}({epk_len:>4}, {md_len:>5})  = {total:>5} B   "
               f"spec {quoted:>5}   {mark}")
         if total != quoted:
-            bad.append(f"{name}: shape ({epk_len}, {md_len}) totals {total} != §2.4's {quoted}")
+            bad.append(f"{name}: shape ({epk_len}, {md_len}) totals {total} != §3's {quoted}")
 
     by_shape: dict[tuple[int, int], list[str]] = {}
     for name, shape in SHAPES.items():
@@ -176,18 +189,18 @@ def main() -> int:
             print(f"  declared collision at {shape}: {' == '.join(sorted(names))}   ok")
         else:
             bad.append(f"UNDECLARED shape collision at {shape}: {', '.join(sorted(names))} -- "
-                       f"record it in §2.4 and in DECLARED_SHAPE_COLLISIONS, or separate them")
+                       f"record it in §3 and in DECLARED_SHAPE_COLLISIONS, or separate them")
     for pair in DECLARED_SHAPE_COLLISIONS:
         if SHAPES[pair[0]] != SHAPES[pair[1]]:
-            bad.append(f"§2.4 declares {pair[0]} and {pair[1]} the same shape and they are "
+            bad.append(f"§3 declares {pair[0]} and {pair[1]} the same shape and they are "
                        f"{SHAPES[pair[0]]} and {SHAPES[pair[1]]}")
 
-    print("\ndelegation window counts -- (len - 32 + 1), not (len / 32)")
+    print("\ndelegation components compared -- (len / 32), one per 32-byte component")
     for name, (derived, quoted) in DELEGATION.items():
         mark = "ok" if derived == quoted else "MISMATCH"
-        print(f"  {derived:>4} windows   spec {quoted:>4}   {mark}   {name}")
+        print(f"  {derived:>4} components   spec {quoted:>4}   {mark}   {name}")
         if derived != quoted:
-            bad.append(f"{name}: derived {derived} windows != quoted {quoted}")
+            bad.append(f"{name}: derived {derived} components != quoted {quoted}")
 
     print("\nmeta-addresses, from §2.2's registry column")
     for name, (derived, quoted) in META.items():
@@ -196,7 +209,7 @@ def main() -> int:
         if derived != quoted:
             bad.append(f"{name} meta-address: derived {derived} != quoted {quoted}")
 
-    print(f"\nregistration calldata, per §4's table, against schemeId 1's "
+    print(f"\nregistration calldata, per the cost table, against schemeId 1's "
           f"{META_CLASSICAL} B")
     for name, (size, quoted) in REGISTRATION_RATIOS.items():
         derived = f"{size / META_CLASSICAL:.1f}"

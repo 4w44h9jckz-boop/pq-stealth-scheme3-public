@@ -15,6 +15,7 @@ from harness.erc5564 import (  # noqa: E402
     ANNOUNCER,
     ANNOUNCER_SHA256,
     install_announcer,
+    native_token_metadata,
     send_announcement,
 )
 from harness.eip7623 import (  # noqa: E402
@@ -32,6 +33,8 @@ from tools import derive_sizes  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "measured.json"
 FIXED_STEALTH = bytes.fromhex("6dbb67f21b650304b5f459833188f52db07c2b43")
+# The amount in the token-metadata row: 1 ETH, the value `harness/payment` funds.
+TOKEN_METADATA_AMOUNT = 10**18
 
 
 @dataclass(frozen=True)
@@ -40,7 +43,7 @@ class Case:
     scheme_id: int
     kind: str
     stealth_address: bytes
-    epk: bytes
+    ephemeral_pub_key: bytes
     metadata: bytes
 
 
@@ -58,30 +61,39 @@ def _observation(receipt: dict, calldata: str) -> dict[str, int]:
 
 
 def _send(url: str, case: Case, *, zero_payload: bool = False) -> dict[str, int]:
-    epk = bytes(len(case.epk)) if zero_payload else case.epk
+    ephemeral_pub_key = (
+        bytes(len(case.ephemeral_pub_key)) if zero_payload else case.ephemeral_pub_key
+    )
     metadata = bytes(len(case.metadata)) if zero_payload else case.metadata
     receipt, calldata = send_announcement(
         url,
         case.scheme_id,
         "0x" + case.stealth_address.hex(),
-        "0x" + epk.hex(),
+        "0x" + ephemeral_pub_key.hex(),
         "0x" + metadata.hex(),
     )
     return _observation(receipt, calldata)
 
 
 def _cases(context: Context) -> list[Case]:
-    """One measured row per schemeId.
+    """One measured row per schemeId, plus schemeId 3 with ERC-5564's token metadata.
 
     schemeId 3 announces the real fixture. schemeId 1 has no fixture -- ERC-5564 does not
     say what a classical announcement's bytes are, so there is nothing to derive one from --
     and its row is therefore CONSTRUCTED: a payload of the right widths carrying no zero
     byte. It is a reference point for the ratio, not a sample of anything.
+
+    The token-metadata row is the real fixture with ERC-5564's native-token metadata for 1 ETH
+    appended after the view tag, which §3 allows a sender to add.
     """
     fixture = context.fixture
-    epk_bytes, metadata_bytes = derive_sizes.SHAPES["schemeId 3 announcement"]
-    if (len(fixture.epk), len(fixture.metadata)) != (epk_bytes, metadata_bytes):
-        raise RuntimeError("fixture announcement does not match Section 2.4's announcement shape")
+    shape = derive_sizes.SHAPES["schemeId 3 announcement"]
+    if (len(fixture.ephemeral_pub_key), len(fixture.metadata)) != shape:
+        raise RuntimeError("fixture announcement does not match Section 3's announcement shape")
+    with_token = fixture.metadata + native_token_metadata(TOKEN_METADATA_AMOUNT)
+    token_shape = derive_sizes.SHAPES["schemeId 3 announcement, token metadata"]
+    if (len(fixture.ephemeral_pub_key), len(with_token)) != token_shape:
+        raise RuntimeError("token-metadata announcement does not match Section 3's shape")
     return [
         Case(
             "classical_reference",
@@ -96,8 +108,16 @@ def _cases(context: Context) -> list[Case]:
             3,
             "real_sample",
             fixture.stealth_address,
-            fixture.epk,
+            fixture.ephemeral_pub_key,
             fixture.metadata,
+        ),
+        Case(
+            "scheme3_token_metadata",
+            3,
+            "real_sample_plus_token",
+            fixture.stealth_address,
+            fixture.ephemeral_pub_key,
+            with_token,
         ),
     ]
 
@@ -112,13 +132,15 @@ def collect(context: Context) -> dict:
         for case in cases:
             transaction = _send(node.url, case)
             probe = _send(node.url, case, zero_payload=True)
-            payload_zero_bytes = case.epk.count(0) + case.metadata.count(0)
+            payload_zero_bytes = (
+                case.ephemeral_pub_key.count(0) + case.metadata.count(0)
+            )
             results.append(
                 {
                     "name": case.name,
                     "scheme_id": case.scheme_id,
                     "kind": case.kind,
-                    "epk_bytes": len(case.epk),
+                    "ephemeral_pub_key_bytes": len(case.ephemeral_pub_key),
                     "metadata_bytes": len(case.metadata),
                     "payload_zero_bytes": payload_zero_bytes,
                     # Derived from the row beside it, never sent. See harness/eip7623.py.
@@ -154,10 +176,10 @@ def collect(context: Context) -> dict:
     }
 
 
-def _calldata_bytes(epk_bytes: int, metadata_bytes: int) -> int:
-    padded_epk = 32 * ((epk_bytes + 31) // 32)
+def _calldata_bytes(ephemeral_pub_key_bytes: int, metadata_bytes: int) -> int:
+    padded_ephemeral_pub_key = 32 * ((ephemeral_pub_key_bytes + 31) // 32)
     padded_metadata = 32 * ((metadata_bytes + 31) // 32)
-    return 4 + 4 * 32 + 32 + padded_epk + 32 + padded_metadata
+    return 4 + 4 * 32 + 32 + padded_ephemeral_pub_key + 32 + padded_metadata
 
 
 def _assert_accounting(results: list[dict], diagnostics: list[dict]) -> None:
@@ -167,7 +189,7 @@ def _assert_accounting(results: list[dict], diagnostics: list[dict]) -> None:
         primary = result["transaction"]
         probe = probes[result["name"]]
         expected_calldata = _calldata_bytes(
-            result["epk_bytes"], result["metadata_bytes"]
+            result["ephemeral_pub_key_bytes"], result["metadata_bytes"]
         )
         if primary["calldata_bytes"] != expected_calldata:
             raise RuntimeError(f"{result['name']}: wrong primary calldata length")
@@ -197,20 +219,20 @@ def render(artifact: dict) -> str:
     lines = [
         "ERC-5564 announcement gas, canonical runtime, Prague",
         "",
-        f"{'case':<22}{'kind':<22}{'payload':>9}{'gasUsed':>10}{'rule':>10}"
+        f"{'case':<24}{'kind':<24}{'payload':>9}{'gasUsed':>10}{'rule':>10}"
         f"{'all-nonzero':>13}",
-        "-" * 86,
+        "-" * 90,
     ]
     for result in artifact["results"]:
         primary = result["transaction"]
         lines.append(
-            f"{result['name']:<22}{result['kind']:<22}"
-            f"{result['epk_bytes'] + result['metadata_bytes']:>9}"
+            f"{result['name']:<24}{result['kind']:<24}"
+            f"{result['ephemeral_pub_key_bytes'] + result['metadata_bytes']:>9}"
             f"{primary['gas_used']:>10}"
             f"{('floor' if floor_binds(primary) else 'standard'):>10}"
             f"{result['upper_bound_gas']:>13}"
         )
-    lines += ["-" * 86,
+    lines += ["-" * 90,
               "all-nonzero is DERIVED from the row beside it, not a second measurement."]
     return "\n".join(lines)
 

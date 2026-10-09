@@ -61,8 +61,8 @@ def main() -> int:
          "384*3 + 32" in out and "32*(10*3 + 4)" in out, True)
 
     print("\na quoted payload that disagrees with its construction")
-    rc, out = run(('"schemeId 3 announcement":  (SEC1_COMPRESSED + VIEW_TAG + CT,     1_122)',
-                   '"schemeId 3 announcement":  (SEC1_COMPRESSED + VIEW_TAG + CT,     1_121)'))
+    rc, out = run(('"schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122)',
+                   '"schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_121)'))
     case("a wrong payload exits 1", rc, 1)
     case("and names the row", "schemeId 3 announcement" in out, True)
     # The ANNOUNCE_ERC loop and the SHAPES loop both compare a total against the same quoted
@@ -73,7 +73,7 @@ def main() -> int:
     case("and it is the ANNOUNCE_ERC loop that says so", "derived 1122 != quoted 1121" in out,
          True)
     case("and the SHAPES loop says so too, in its own words",
-         "totals 1122 != §2.4's 1121" in out, True)
+         "totals 1122 != §3's 1121" in out, True)
 
     print("\nthe view-tag width is load-bearing, and reaches EVERY payload")
     # The failure this case exists for actually happened: the width moved in one file and
@@ -84,32 +84,32 @@ def main() -> int:
     case("the ANNOUNCE_ERC loop names the new total",
          "schemeId 3 announcement: derived 1129 != quoted 1122" in out, True)
     case("the SHAPES loop names the new field pair",
-         "shape (33, 1096) totals 1129 != §2.4's 1122" in out, True)
+         "shape (1121, 8) totals 1129 != §3's 1122" in out, True)
 
     print("\nthe shape table -- (ephemeralPubKey, metadata), not the total")
-    rc, out = run(('    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),',
-                   '    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT + 1),'))
+    rc, out = run(('    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),',
+                   '    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG + 1),'))
     case("a shape whose fields do not total the quoted payload exits 1", rc, 1)
-    case("and names the shape", "shape (33, 1090) totals 1123" in out, True)
+    case("and names the shape", "shape (1121, 2) totals 1123" in out, True)
 
     # Two rows sharing a shape is legal ONLY if declared; one appearing quietly is what this
-    # catches. §2.4's recognition rule would go stale and nothing else would say so. One scheme
+    # catches. §3's recognition rule would go stale and nothing else would say so. One scheme
     # ships, so the mutation adds the second -- the detector is what a future scheme walks into.
-    ADD = ('    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),\n',
-           '    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),\n'
-           '    "a second scheme":            (SEC1_COMPRESSED,  VIEW_TAG + CT),\n')
-    QUOTE = ('    "schemeId 3 announcement":  (SEC1_COMPRESSED + VIEW_TAG + CT,     1_122),\n',
-             '    "schemeId 3 announcement":  (SEC1_COMPRESSED + VIEW_TAG + CT,     1_122),\n'
-             '    "a second scheme":            (SEC1_COMPRESSED + VIEW_TAG + CT,     1_122),\n')
+    ADD = ('    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),\n',
+           '    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),\n'
+           '    "a second scheme":            (SEC1_COMPRESSED + CT,  VIEW_TAG),\n')
+    QUOTE = ('    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122),\n',
+             '    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122),\n'
+             '    "a second scheme":            (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122),\n')
     rc, out = run(QUOTE, ADD)
     case("an undeclared shape collision exits 1", rc, 1)
     case("and names both rows", "UNDECLARED shape collision" in out
          and "schemeId 3 announcement" in out and "a second scheme" in out, True)
 
     rc, out = run(QUOTE,
-                  ('    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),\n',
-                   '    "schemeId 3 announcement":  (SEC1_COMPRESSED,  VIEW_TAG + CT),\n'
-                   '    "a second scheme":            (CT,               VIEW_TAG),\n'),
+                  ('    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),\n',
+                   '    "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),\n'
+                   '    "a second scheme":            (SEC1_COMPRESSED,  VIEW_TAG + CT),\n'),
                   ("DECLARED_SHAPE_COLLISIONS: list[tuple[str, str]] = []",
                    'DECLARED_SHAPE_COLLISIONS = [("schemeId 3 announcement", '
                    '"a second scheme")]'))
@@ -146,12 +146,12 @@ def main() -> int:
     case("wrong odds for a zero byte exit 1", rc, 1)
     case("and the derived overstatement doubles", "~ 117 gas" in out, True)
 
-    print("\nthe delegation window counts -- (len - 32 + 1), not (len / 32)")
-    # The scan is over the WHOLE delegated object. `96 / 32 = 3` is the wrong answer that
-    # placed the spending seed verbatim in the bytes handed to a scanning service.
-    rc, out = run(("(96 - SCALAR + 1, 65)", "(96 // SCALAR, 65)"))
-    case("a per-32-byte-block window count exits 1", rc, 1)
-    case("and names the window count", "windows" in out, True)
+    print("\nthe delegation component count -- (len / 32)")
+    # The guard compares whole 32-byte components. The superseded every-window scan,
+    # `96 - 32 + 1 = 65`, is the count a stale port would carry.
+    rc, out = run(("(96 // SCALAR, 3)", "(96 - SCALAR + 1, 3)"))
+    case("a sliding-window count exits 1", rc, 1)
+    case("and names the component count", "components" in out, True)
 
     print("\nthe derivation side -- formulas, not copied constants")
     # The formula must agree with FIPS 203's stated length, and that cross-check is the only

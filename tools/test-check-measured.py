@@ -46,7 +46,7 @@ def synthetic() -> dict:
             "name": name,
             "scheme_id": scheme_id,
             "kind": kind,
-            "epk_bytes": epk,
+            "ephemeral_pub_key_bytes": epk,
             "metadata_bytes": md,
             "transaction": {
                 "calldata_bytes": calldata,
@@ -555,7 +555,7 @@ def main() -> int:
     if committed.is_file():
         rc, out = run(json.loads(committed.read_text(encoding="utf-8")))
         case("the committed announcement snapshot lints in isolation", rc, 0)
-        case("and every row of §4's table is among them", "nothing measured it" in out, False)
+        case("and every row of the cost table is among them", "nothing measured it" in out, False)
 
     # The claim the name used to make: glob README, spec, and the other harness
     # receipts. That is `check_measured.py` on the real repository root.

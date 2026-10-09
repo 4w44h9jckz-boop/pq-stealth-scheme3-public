@@ -130,6 +130,19 @@ fn production_decapsulate_round_trips_acvp_key() {
     assert_eq!(sender_ss, recipient_ss);
 }
 
+/// `ML-KEM.Encaps(ek)` decapsulates to the sender's secret, and draws fresh `m` each call.
+#[test]
+fn random_encapsulation_round_trips_and_is_fresh() {
+    let dz = keygen_dz(&cases("keygen")[0]);
+    let (ek, dk_seed) = MlKem768::keygen(&dz).expect("ACVP (d, z)");
+    let (ct_a, ss_a) = MlKem768::encapsulate_random(&ek).expect("valid ek");
+    let (ct_b, ss_b) = MlKem768::encapsulate_random(&ek).expect("valid ek");
+    assert_eq!(MlKem768::decapsulate(&dk_seed, &ct_a).unwrap(), ss_a);
+    assert_eq!(MlKem768::decapsulate(&dk_seed, &ct_b).unwrap(), ss_b);
+    assert_ne!(ct_a, ct_b, "a repeated ciphertext means a repeated m");
+    assert!(MlKem768::encapsulate_random(&[0u8; 1183]).is_err());
+}
+
 /// A well-formed ciphertext for someone else returns a secret, not an error.
 #[test]
 fn decapsulating_a_foreign_ciphertext_does_not_fail() {

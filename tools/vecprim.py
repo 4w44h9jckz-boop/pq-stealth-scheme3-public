@@ -239,7 +239,7 @@ def kem_keygen(dz: bytes) -> tuple[bytes, bytes]:
 
 
 def kem_encaps(ek: bytes, m: bytes) -> tuple[bytes, bytes]:
-    """`ML-KEM.Encaps_internal(ek, m)` -> `(ct, ss)`. Deterministic in `m`, per §2.3.
+    """`ML-KEM.Encaps_internal(ek, m)` -> `(ct, ss)`. Deterministic in `m`, per §1.
 
     Returned in the order the specification writes them, `(ct, ss)`, which is the REVERSE of
     the library's `(ss, ct)`. Normalised here rather than at each call site: a fixture with the
@@ -296,33 +296,26 @@ def acvp_selftest(tier1: dict) -> list[str]:
         if ss.hex() != c["k"]:
             bad.append(f"decaps tcId {c['tcId']} ({c['reason']}): ss disagrees with ACVP")
     return bad
-def reduce_to_scalar(base: bytes) -> tuple[int, int]:
-    """§1's counter-based reduction. Returns `(scalar, counter)`.
+def offset_scalar(base: bytes) -> int:
+    """§1's range check. Returns `base` as an integer if `0 < base < n`.
 
-    The bound is a **failure**, not an unbounded retry: `counter = 0` contributes no counter
-    byte at all, and counters 1 to 256 contribute byte values `0x01`..`0xFF` then `0x00` -- 257
-    distinct inputs, none repeated -- so a 257th iteration would re-derive the `0x01` candidate
-    already rejected. Raises `ValueError` at exhaustion.
+    There is no reduction and no retry: an out-of-range `base` raises `ValueError`, and the
+    sender draws new randomness. That happens with probability about 2**-128, so no findable
+    `ss` reaches it; V1-03 and V1-04 supply `base` directly.
 
     Big-endian, which V1-02 exists to pin: a little-endian read gives a different scalar,
     therefore a different address, therefore funds the recipient cannot spend. Silent and total.
     """
     candidate = int.from_bytes(base, "big")
-    if 0 < candidate < N:
-        return candidate, 0
-    for counter in range(1, 257):
-        digest = hashlib.sha256(DS_OFFSET + base + bytes([counter & 0xFF])).digest()
-        candidate = int.from_bytes(digest, "big")
-        if 0 < candidate < N:
-            return candidate, counter
-    raise ValueError("257 candidates exhausted")
+    if not 0 < candidate < N:
+        raise ValueError("offset out of range")
+    return candidate
 
 
-def h_of_ss(ss: bytes) -> tuple[bytes, int, int]:
-    """§1's `H(ss)`. Returns `(base, scalar, counter)`."""
+def h_of_ss(ss: bytes) -> tuple[bytes, int]:
+    """§1's `H(ss)`. Returns `(base, scalar)`."""
     base = hashlib.sha256(DS_OFFSET + ss).digest()
-    scalar, counter = reduce_to_scalar(base)
-    return base, scalar, counter
+    return base, offset_scalar(base)
 
 
 VIEW_TAG_BYTES = 1

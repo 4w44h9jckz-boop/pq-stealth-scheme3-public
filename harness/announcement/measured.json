@@ -8,14 +8,14 @@
   },
   "fixture": {
     "name": "scheme3-demo-v1",
-    "sha256": "777b852e6430a9ae87e54b3aade83199eccd3ad83ce5e95d927e584c0a31fbe3"
+    "sha256": "42b699c56a52d7cc6f11edacff19883439f1933663ffe53e4c1222eb2c375bc2"
   },
   "results": [
     {
       "name": "classical_reference",
       "scheme_id": 1,
       "kind": "constructed_reference",
-      "epk_bytes": 33,
+      "ephemeral_pub_key_bytes": 33,
       "metadata_bytes": 1,
       "payload_zero_bytes": 0,
       "upper_bound_gas": 28313,
@@ -29,14 +29,28 @@
       "name": "scheme3_real_sample",
       "scheme_id": 3,
       "kind": "real_sample",
-      "epk_bytes": 33,
-      "metadata_bytes": 1089,
+      "ephemeral_pub_key_bytes": 1121,
+      "metadata_bytes": 1,
       "payload_zero_bytes": 2,
-      "upper_bound_gas": 69360,
+      "upper_bound_gas": 69390,
       "transaction": {
         "calldata_bytes": 1380,
-        "zero_bytes": 230,
-        "gas_used": 69300
+        "zero_bytes": 229,
+        "gas_used": 69330
+      }
+    },
+    {
+      "name": "scheme3_token_metadata",
+      "scheme_id": 3,
+      "kind": "real_sample_plus_token",
+      "ephemeral_pub_key_bytes": 1121,
+      "metadata_bytes": 57,
+      "payload_zero_bytes": 28,
+      "upper_bound_gas": 71390,
+      "transaction": {
+        "calldata_bytes": 1412,
+        "zero_bytes": 231,
+        "gas_used": 70550
       }
     }
   ],
@@ -57,8 +71,18 @@
       "kind": "zero_dynamic_fields_probe",
       "transaction": {
         "calldata_bytes": 1380,
-        "zero_bytes": 1350,
-        "gas_used": 43979
+        "zero_bytes": 1349,
+        "gas_used": 43991
+      }
+    },
+    {
+      "name": "scheme3_token_metadata_execution_probe",
+      "for_case": "scheme3_token_metadata",
+      "kind": "zero_dynamic_fields_probe",
+      "transaction": {
+        "calldata_bytes": 1412,
+        "zero_bytes": 1381,
+        "gas_used": 44463
       }
     }
   ]

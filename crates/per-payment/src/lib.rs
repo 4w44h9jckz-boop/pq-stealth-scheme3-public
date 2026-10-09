@@ -2,7 +2,7 @@
 //!
 //! The scheme is specified in §2; §1 gives the offset and view-tag derivation it shares with
 //! anything else built on ERC-5564. Spending is secp256k1 ECDSA. What the hybrid does and
-//! does not give is in §5.
+//! does not give is under Security Considerations.
 //!
 use pqsa_core::{
     Bytes32, Error, ExportableSpendKey, StealthScheme, VIEW_TAG_BYTES,
@@ -18,6 +18,10 @@ const DS_OFFSET: &[u8] = b"pq-stealth/offset/v1";
 
 /// View-tag domain separator. Separate digest from the offset (V1-07).
 const DS_VIEWTAG: &[u8] = b"pq-stealth/view-tag/v1";
+
+/// `ephemeralPubKey` length: `epk` (33) then `ct` (1 088). §3.
+pub const EPHEMERAL_PUB_KEY_BYTES: usize = 33 + MlKem768::CT_BYTES;
+
 /// schemeId 3: payment secret combines ECDH and KEM secrets. §2.
 pub struct SchemeId3;
 
@@ -46,7 +50,8 @@ pub struct Master {
     pub kem_seed: Vec<u8>,
 }
 
-/// Delegatable scan material. §2.1. A delegated scanner sees the whole payment graph (§9).
+/// Delegatable scan material. §2.1. A delegated scanner sees the whole payment graph
+/// (Security Considerations).
 #[derive(Clone)]
 pub struct Tracking {
     /// Viewing scalar. Always `Some` here; the `Option` is vestigial.
@@ -89,7 +94,7 @@ pub fn verified_ek(kem_seed: &[u8], registered: &[u8]) -> Result<Vec<u8>, Error>
     Ok(ek)
 }
 
-/// ERC-5564 payload. §3: `epk` in `ephemeralPubKey`, `view_tag ‖ ct` in `metadata`.
+/// ERC-5564 payload. §3: `epk ‖ ct` in `ephemeralPubKey`, `view_tag` at `metadata[0]`.
 #[derive(Debug, Clone)]
 pub struct Announcement {
     /// schemeId 3: sender ephemeral point.
@@ -118,12 +123,12 @@ pub struct Match {
 ///
 /// # Errors
 ///
-/// [`Error::NoValidScalar`] if §1's bounded reduction finds no valid scalar.
+/// [`Error::NoValidScalar`] if §1's offset is not a valid scalar (probability about 2⁻¹²⁸).
 pub fn derive_from_shared_secret(ss: &Bytes32) -> Result<(Bytes32, [u8; VIEW_TAG_BYTES]), Error> {
     Ok((offset_of(ss)?, view_tag_of(ss)))
 }
 
-/// `SHA256(DS_viewtag ‖ ss)[0]`. Does not run offset reduction.
+/// `SHA256(DS_viewtag ‖ ss)[0]`. Does not compute the offset.
 #[must_use]
 pub fn view_tag_of(ss: &Bytes32) -> [u8; VIEW_TAG_BYTES] {
     let tag_digest = Sha256::digest([DS_VIEWTAG, ss.as_slice()].concat());
@@ -133,35 +138,18 @@ pub fn view_tag_of(ss: &Bytes32) -> [u8; VIEW_TAG_BYTES] {
 }
 
 /// §1 offset from `ss`. Separate from [`view_tag_of`] so a scanner can reject on the tag
-/// before doing scalar reduction.
+/// before computing the offset.
 fn offset_of(ss: &Bytes32) -> Result<Bytes32, Error> {
     let base: Bytes32 = Sha256::digest([DS_OFFSET, ss.as_slice()].concat()).into();
-    reduce_to_scalar(&base)
+    check_offset(&base)
 }
 
-/// §1 scalar reduction. Digests are BE. 257 distinct candidates (`counter = 0` is unhashed
-/// `base`; `1..=256` as `u8` covers every byte including 0 via wrap of 256).
-///
-/// ```text
-/// for counter in 0..=256:
-///     candidate = base  if counter == 0
-///               = SHA256(DS_offset || base || u8(counter))  otherwise
-///     accept if 0 < candidate < n
-/// ```
-fn reduce_to_scalar(base: &Bytes32) -> Result<Bytes32, Error> {
-    for counter in 0u16..=256 {
-        let candidate: Bytes32 = if counter == 0 {
-            *base
-        } else {
-            #[allow(clippy::cast_possible_truncation)]
-            let byte = counter as u8;
-            Sha256::digest([DS_OFFSET, base.as_slice(), &[byte]].concat()).into()
-        };
-        if pqsa_ec::public_point(&candidate).is_ok() {
-            return Ok(candidate);
-        }
-    }
-    Err(Error::NoValidScalar)
+/// §1 range check. `base`, read big-endian, is the offset if `0 < base < n`. Otherwise it is
+/// [`Error::NoValidScalar`]: nothing is reduced mod `n` and nothing is retried. The sender
+/// draws new randomness and a scanner skips (§2.4, §2.5).
+fn check_offset(base: &Bytes32) -> Result<Bytes32, Error> {
+    pqsa_ec::public_point(base)?;
+    Ok(*base)
 }
 
 /// SHA3-256(DS ‖ ss_ec ‖ ss_pq ‖ epk ‖ ct ‖ viewing_pk_ec ‖ ek). Direct hash, not HKDF. §1.1.
@@ -230,6 +218,45 @@ fn add_points(spending: &CompressedPoint, offset: &Bytes32) -> Option<Compressed
 /// schemeId 3 combiner domain separator. §2.4.
 const DS_HYBRID: &[u8] = b"pq-stealth/hybrid-payment/v1";
 
+/// Draws before [`SchemeId3::announce_random`] gives up. A draw is unusable when `esk` or the
+/// offset is out of range, each with probability about 2⁻¹²⁸, so running out means the RNG is
+/// broken.
+const RANDOM_DRAWS: usize = 64;
+
+/// The rest of §2.4 once `esk` is chosen: ECDH, `encapsulate`, the §1.1 combiner, the address.
+/// [`Error::SeedRejected`] if the offset is out of range, so the caller draws again.
+fn finish_announcement(
+    meta: &MetaAddress,
+    esk: &Bytes32,
+    epk: CompressedPoint,
+    encapsulate: impl FnOnce(&[u8]) -> Result<(Vec<u8>, Bytes32), Error>,
+) -> Result<Announcement, Error> {
+    let viewing_pk_ec = meta.viewing_ec.ok_or(Error::Malformed)?;
+    let ss_ec = pqsa_ec::ecdh(esk, &viewing_pk_ec)?;
+    let (ct, ss_pq) = encapsulate(&meta.ek)?;
+    let ss = combine_secrets(
+        DS_HYBRID,
+        &ss_ec,
+        &ss_pq,
+        &epk,
+        &ct,
+        &viewing_pk_ec,
+        &meta.ek,
+    )?;
+    // An out-of-range offset rejects this announcement's randomness, not the meta-address. §1.
+    let (offset, view_tag) = derive_from_shared_secret(&ss).map_err(|e| match e {
+        Error::NoValidScalar => Error::SeedRejected,
+        other => other,
+    })?;
+    let stealth = add_points(&meta.spending, &offset).ok_or(Error::Malformed)?;
+    Ok(Announcement {
+        epk: Some(epk),
+        ct,
+        view_tag,
+        stealth_address: pqsa_ec::address_of(&stealth),
+    })
+}
+
 impl StealthScheme for SchemeId3 {
     const SCHEME_ID: u64 = 3;
     const NAME: &'static str = "schemeId 3 (direct KEM, hybrid)";
@@ -244,7 +271,8 @@ impl StealthScheme for SchemeId3 {
     type Scanner = Scanner;
     type SpendKey = Bytes32;
 
-    /// `spending_seed(32) ‖ viewing_ec_seed(32) ‖ kem_seed(64)`. Guard scans the 96-byte concat.
+    /// `spending_seed(32) ‖ viewing_ec_seed(32) ‖ kem_seed(64)`. Guard compares the spending
+    /// seed with `viewing_ec_seed`, `d` and `z`.
     fn keygen(seed: &[u8]) -> Result<(MetaAddress, Master, Tracking), Error> {
         if seed.len() != Self::KEYGEN_SEED_BYTES {
             return Err(Error::Malformed);
@@ -253,7 +281,6 @@ impl StealthScheme for SchemeId3 {
         let viewing_ec_seed: Bytes32 = seed[32..64].try_into().map_err(|_| Error::Malformed)?;
         let kem_seed = seed[64..].to_vec();
         let delegated = [viewing_ec_seed.as_slice(), &kem_seed].concat();
-        debug_assert_eq!(pqsa_core::delegation_window_count(delegated.len()), 65);
         reject_if_spending_key_is_delegated(&spending_seed, &delegated)?;
         let spending = pqsa_ec::public_point(&spending_seed)?;
         let viewing_ec = pqsa_ec::public_point(&viewing_ec_seed)?;
@@ -276,37 +303,38 @@ impl StealthScheme for SchemeId3 {
         ))
     }
 
-    /// `ephemeral_seed(32) ‖ encap_seed(32)`, then the §1.1 combiner.
+    /// §2.4: `esk` from the operating system's CSPRNG and `ML-KEM.Encaps(ek)`, both drawn
+    /// again if `esk` or the offset is out of range.
+    fn announce_random(meta: &MetaAddress) -> Result<Announcement, Error> {
+        let mut esk: Bytes32 = [0u8; 32];
+        for _ in 0..RANDOM_DRAWS {
+            pqsa_core::os_random(&mut esk)?;
+            let epk = match pqsa_ec::public_point(&esk) {
+                Ok(epk) => epk,
+                Err(Error::NoValidScalar) => continue,
+                Err(other) => return Err(other),
+            };
+            match finish_announcement(meta, &esk, epk, MlKem768::encapsulate_random) {
+                Err(Error::SeedRejected) => continue,
+                other => return other,
+            }
+        }
+        Err(Error::Rng)
+    }
+
+    /// `ephemeral_seed(32) ‖ encap_seed(32)`, then the §1.1 combiner. `encap_seed` is ML-KEM's
+    /// `m`, through `Encaps_internal`.
     fn announce(meta: &MetaAddress, seed: &[u8]) -> Result<Announcement, Error> {
         if seed.len() != Self::ANNOUNCE_SEED_BYTES {
             return Err(Error::Malformed);
         }
-        let viewing_pk_ec = meta.viewing_ec.ok_or(Error::Malformed)?;
         let esk: Bytes32 = seed[..32].try_into().map_err(|_| Error::Malformed)?;
         // Invalid ephemeral scalar is SeedRejected (retry the next index), not NoValidScalar.
         let epk = pqsa_ec::public_point(&esk).map_err(|e| match e {
             Error::NoValidScalar => Error::SeedRejected,
             other => other,
         })?;
-        let ss_ec = pqsa_ec::ecdh(&esk, &viewing_pk_ec)?;
-        let (ct, ss_pq) = MlKem768::encapsulate(&meta.ek, &seed[32..])?;
-        let ss = combine_secrets(
-            DS_HYBRID,
-            &ss_ec,
-            &ss_pq,
-            &epk,
-            &ct,
-            &viewing_pk_ec,
-            &meta.ek,
-        )?;
-        let (offset, view_tag) = derive_from_shared_secret(&ss)?;
-        let stealth = add_points(&meta.spending, &offset).ok_or(Error::Malformed)?;
-        Ok(Announcement {
-            epk: Some(epk),
-            ct,
-            view_tag,
-            stealth_address: pqsa_ec::address_of(&stealth),
-        })
+        finish_announcement(meta, &esk, epk, |ek| MlKem768::encapsulate(ek, &seed[32..]))
     }
 
     /// ECDH + decaps + combiner. `epk` and `ct` are fresh per announcement. The long-term
@@ -384,7 +412,10 @@ impl StealthScheme for SchemeId3 {
         })
     }
 
-    /// `ephemeralPubKey` = `epk`, `metadata` = `view_tag ‖ ct`.
+    /// `ephemeralPubKey` = `epk ‖ ct`, `metadata` = `view_tag`.
+    ///
+    /// `metadata` is the view tag alone. ERC-5564 lets the bytes after it carry token data;
+    /// that is the caller's to append, since this scheme does not know the token or amount.
     ///
     /// # Panics
     ///
@@ -393,22 +424,25 @@ impl StealthScheme for SchemeId3 {
         let epk = ann.epk.expect("schemeId 3 always has an ephemeral point");
         (
             ann.stealth_address,
-            epk.as_bytes().to_vec(),
-            [ann.view_tag.as_slice(), &ann.ct].concat(),
+            [epk.as_bytes().as_slice(), &ann.ct].concat(),
+            ann.view_tag.to_vec(),
         )
     }
 
+    /// Reads the view tag from `metadata[0]` and ignores any later bytes, which ERC-5564
+    /// leaves to the sender.
     fn announcement_from_bytes(
         stealth_address: &[u8; 20],
-        epk: &[u8],
+        ephemeral_pub_key: &[u8],
         metadata: &[u8],
     ) -> Option<Announcement> {
-        if epk.len() != 33 || metadata.len() != VIEW_TAG_BYTES + MlKem768::CT_BYTES {
+        if ephemeral_pub_key.len() != EPHEMERAL_PUB_KEY_BYTES || metadata.len() < VIEW_TAG_BYTES {
             return None;
         }
+        let (epk, ct) = ephemeral_pub_key.split_at(33);
         Some(Announcement {
             epk: Some(pqsa_ec::decode_point(epk).ok()?),
-            ct: metadata[VIEW_TAG_BYTES..].to_vec(),
+            ct: ct.to_vec(),
             view_tag: metadata[..VIEW_TAG_BYTES].try_into().ok()?,
             stealth_address: *stealth_address,
         })
@@ -666,6 +700,24 @@ mod tests {
         assert_eq!(m.stealth_address, ann.stealth_address);
         assert!(SchemeId3::spend_key(&master, &m).is_ok());
     }
+    /// The §2.4 sender: a random announcement is found and spent by its recipient, and two
+    /// of them share nothing a scanner or an observer could link.
+    #[test]
+    fn a_random_announcement_round_trips_and_is_fresh() {
+        let (meta, master, tracking) = SchemeId3::keygen(&seed128()).unwrap();
+        let scanner = SchemeId3::bind(&tracking, &meta).unwrap();
+        let a = SchemeId3::announce_random(&meta).unwrap();
+        let b = SchemeId3::announce_random(&meta).unwrap();
+        for ann in [&a, &b] {
+            let m = SchemeId3::scan(&scanner, ann).expect("our own announcement must match");
+            assert_eq!(m.stealth_address, ann.stealth_address);
+            assert!(SchemeId3::spend_key(&master, &m).is_ok());
+        }
+        assert_ne!(a.epk, b.epk, "a repeated epk links two announcements");
+        assert_ne!(a.ct, b.ct, "a repeated ct means a repeated m");
+        assert_ne!(a.stealth_address, b.stealth_address);
+    }
+
     /// schemeId 3: mismatch on a foreign spending seed; same spending seed with other fields
     /// changed still spends.
     #[test]
@@ -815,8 +867,8 @@ mod tests {
         let mut sender = pqsa_core::SenderState::resume([0x5a; 32], 0);
         let ann = SchemeId3::announce(&meta, &sender.draw_seed::<SchemeId3>().unwrap()).unwrap();
         let (addr, epk, metadata) = SchemeId3::announcement_to_bytes(&ann);
-        assert_eq!(epk.len(), 33);
-        assert_eq!(metadata.len(), VIEW_TAG_BYTES + MlKem768::CT_BYTES);
+        assert_eq!(epk.len(), 33 + MlKem768::CT_BYTES);
+        assert_eq!(metadata.len(), VIEW_TAG_BYTES);
 
         let blob: Vec<u8> = addr.iter().chain(&epk).chain(&metadata).copied().collect();
         let digest: String = Sha256::digest(&blob)
@@ -825,7 +877,7 @@ mod tests {
             .collect();
         assert_eq!(
             digest,
-            "466f7268c590a20ac3771e416034fbc8d7e13b2af953ea9672466d61ceb89eca"
+            "b41b33fe1bfd55b23f7704ff9ee15d991ec1d5dd6a0d261752f4485068abc5ef"
         );
     }
 }

@@ -43,7 +43,7 @@ TIER1 = Path("vectors/tier1/ml-kem-768-acvp.json")
 # The plan groups this generator builds, in emission order. Every invocation builds all of
 # them: there is no partial run, which is what lets the manifest be REPLACED rather than
 # merged below. `main` compares this set with the plan directly.
-GROUPS = ("1", "2.9")
+GROUPS = ("1", "2")
 
 GROUP = re.compile(r"^## (?:\d+[a-z]?)\.\s*Section([\d.]+)")
 ROW = re.compile(r"^\|\s*(V\d+-\d+[a-z]?)\s*\|")
@@ -70,7 +70,7 @@ def claim_cell(line: str) -> str:
     cells = CODE_SPAN.sub("", line).split("|")
     return cells[2].strip() if len(cells) > 2 else ""
 
-# Read off Section2.9 rather than remembered: a remembered `pq-stealth/hybrid/v1` — a string
+# Read off Section2.4 rather than remembered: a remembered `pq-stealth/hybrid/v1` — a string
 # that appears nowhere in the specification — would derive every V3 row under the wrong
 # constant.
 DS_HYBRID = b"pq-stealth/hybrid-payment/v1"
@@ -138,17 +138,17 @@ def hx(b: bytes) -> str:
 def group_1() -> dict[str, dict]:
     v: dict[str, dict] = {}
     ss = bytes(range(32))
-    base, scalar, counter = vp.h_of_ss(ss)
+    base, scalar = vp.h_of_ss(ss)
     v["V1-01"] = {
-        "claim": "H(ss) = SHA256(DS_offset || ss), reduced",
+        "claim": "H(ss) = SHA256(DS_offset || ss), range-checked",
         "given": {"ss": hx(ss)},
-        "expect": {"base": hx(base), "offset": f"{scalar:064x}", "counter": counter},
+        "expect": {"base": hx(base), "offset": f"{scalar:064x}"},
     }
 
     # V1-02 pins BIG-ENDIAN. The `wrong` column is the whole point: a little-endian read gives
     # a different scalar, a different address, and funds nobody can spend. So the vector states
     # the wrong answer too, computed the wrong way on purpose.
-    be = int.from_bytes(base, "big") % vp.N
+    be = vp.offset_scalar(base)
     le = int.from_bytes(base, "little") % vp.N
     v["V1-02"] = {
         "claim": "every digest is big-endian",
@@ -159,47 +159,35 @@ def group_1() -> dict[str, dict]:
                           "the recipient cannot spend. Silent and total"},
     }
 
+    # V1-03 and V1-04 are the two ways out of range. Neither is reachable from a findable `ss`,
+    # so `base` is supplied directly; the outcome is a failure, after which the sender draws
+    # new randomness.
     zero = bytes(32)
-    s0, c0 = vp.reduce_to_scalar(zero)
     v["V1-03"] = {
-        "claim": "reduction MUST reject base = 0",
+        "claim": "the range check MUST reject base = 0",
         "given": {"base": hx(zero)},
-        "expect": {"counter": c0, "offset": f"{s0:064x}"},
-        "wrong": {"counter": 0, "offset": f"{0:064x}", "note": "no range check"},
+        "expect": {"outcome": "fail"},
+        "wrong": {"offset": f"{0:064x}",
+                  "note": "no range check: offset 0 makes the stealth address the address of "
+                          "spending_pk itself, which links the payment to the registered key"},
     }
 
     nb = vp.N.to_bytes(32, "big")
-    sn, cn = vp.reduce_to_scalar(nb)
     v["V1-04"] = {
-        "claim": "reduction MUST reject base = n",
+        "claim": "the range check MUST reject base = n",
         "given": {"base": hx(nb)},
-        "expect": {"counter": cn, "offset": f"{sn:064x}"},
-        "wrong": {"note": "accepted as valid; some libraries reduce mod n silently and "
-                          "return 0"},
+        "expect": {"outcome": "fail"},
+        "wrong": {"offset_reduced_mod_n": f"{vp.N % vp.N:064x}",
+                  "note": "reducing mod n instead of failing, which some libraries do silently "
+                          "and which gives offset 0"},
     }
 
     n1 = (vp.N - 1).to_bytes(32, "big")
-    s1, c1 = vp.reduce_to_scalar(n1)
     v["V1-05"] = {
         "claim": "base = n - 1 is valid",
         "given": {"base": hx(n1)},
-        "expect": {"counter": c1, "offset": f"{s1:064x}"},
+        "expect": {"offset": f"{vp.offset_scalar(n1):064x}"},
         "wrong": {"note": "rejected -- an off-by-one in the bound loses a legitimate payment"},
-    }
-
-    # V1-06: the counter byte is ONE byte appended. The named wrong answers are a u32/u64
-    # encoding and the ASCII digit, so all three are emitted.
-    forced = zero  # reduces at counter 1, per V1-03
-    one = hashlib.sha256(vp.DS_OFFSET + forced + bytes([1])).digest()
-    v["V1-06"] = {
-        "claim": "the counter byte is a single byte appended",
-        "given": {"base": hx(forced), "counter": 1},
-        "expect": {"digest": hx(one)},
-        "wrong": {
-            "u32be": hx(hashlib.sha256(vp.DS_OFFSET + forced + (1).to_bytes(4, "big")).digest()),
-            "u64be": hx(hashlib.sha256(vp.DS_OFFSET + forced + (1).to_bytes(8, "big")).digest()),
-            "ascii": hx(hashlib.sha256(vp.DS_OFFSET + forced + b"1").digest()),
-        },
     }
 
     tag = vp.view_tag(ss)
@@ -214,12 +202,13 @@ def group_1() -> dict[str, dict]:
                 hx(hashlib.sha256(vp.DS_VIEWTAG + ss).digest()[31:]),
             "leading_byte_of_H_ss": hx(base[:1]),
             "note": "the tag was eight bytes until the announced stealthAddress became the "
-                    "authoritative check (2.4 MUST) and the tag was narrowed to a prefilter; "
+                    "authoritative check (Section 2.5 MUST) and the tag was narrowed to a "
+                    "prefilter; "
                     "an implementation carrying the old width matches nothing",
         },
     }
     return v
-def group_2_9(t1: dict) -> dict[str, dict]:
+def group_2(t1: dict) -> dict[str, dict]:
     v: dict[str, dict] = {}
     en = t1["encapsulation"][0]
     ek = bytes.fromhex(en["ek"])
@@ -243,24 +232,25 @@ def group_2_9(t1: dict) -> dict[str, dict]:
                                     "accepting 96 bytes, which is a well-formed seed for a "
                                     "scheme with no EC half and is the likeliest port"}}
     spending_seed = bytes([0x11]) * 32
-    offsets = [0, 40, 47, 5, 16, 20]
+    # The delegated object is viewing_ec_seed(32) || d(32) || z(32); the check compares
+    # spending_seed with each of the three components, so each is planted in turn.
+    components = {"viewing_ec_seed": 0, "d": 32, "z": 64}
     planted = {}
-    for off in offsets:
+    for name, off in components.items():
         buf = bytearray(bytes([0x44]) * 96)
         buf[off:off + 32] = spending_seed
-        planted[off] = hx(bytes(buf))
-    v["V3-02"] = {"claim": "the delegation check scans the 96-byte delegated object at all 65 "
-                           "offsets",
+        planted[name] = hx(bytes(buf))
+    v["V3-02"] = {"claim": "keygen MUST reject a seed whose spending_seed equals "
+                           "viewing_ec_seed, d or z",
                   "given": {"spending_seed": hx(spending_seed),
-                            "delegated_objects_by_offset": planted,
-                            "offsets_wholly_inside_a_half": [0, 40, 47],
-                            "offsets_straddling_the_boundary": [5, 16, 20]},
-                  "expect": {"outcome": "error, all six"},
-                  "wrong": {"note": "scanning the two halves separately covers 34 offsets and "
-                                    "accepts the straddling cases, placing the spending seed "
-                                    "verbatim in bytes handed to a scanning service"}}
+                            "delegated_objects_by_component": planted},
+                  "expect": {"outcome": "error, all three"},
+                  "wrong": {"note": "comparing against viewing_ec_seed alone. That catches a "
+                                    "port of ERC-5564's single-key meta-address and misses "
+                                    "the same 32 bytes copied into the KEM seed, which a "
+                                    "scanning service receives verbatim"}}
     clean = bytes([0x44]) * 96
-    v["V3-02a"] = {"claim": "a keygen with no coincidence is accepted",
+    v["V3-02a"] = {"claim": "a keygen with no equal component is accepted",
                    "given": {"spending_seed": hx(spending_seed), "delegated": hx(clean)},
                    "expect": {"outcome": "outputs, no error"},
                    "wrong": {"note": "rejecting valid keygens -- the positive control, "
@@ -272,7 +262,7 @@ def group_2_9(t1: dict) -> dict[str, dict]:
                       "viewing_pk_ec_compact_0x05": hx(b"\x05" + viewing_pk_ec[1:])},
                   "expect": {"outcome": "error at decode"},
                   "wrong": {"note": "validating only spending_pk, which is the natural port "
-                                    "of Section2's decoder"}}
+                                    "of a decoder for a meta-address that carries one point"}}
     v["V3-04"] = {"claim": "ss_ec is the x-coordinate alone",
                   "given": {"esk": f"{esk:064x}", "viewing_pk_ec": hx(viewing_pk_ec)},
                   "expect": {"ss_ec": hx(ss_ec), "length": 32},
@@ -306,7 +296,8 @@ def group_2_9(t1: dict) -> dict[str, dict]:
                   "wrong": {
                       "three_field_form": hx(hashlib.sha3_256(DS_HYBRID + three).digest()),
                       "note": "any other order, and any omission -> a different ss. "
-                              "The three-field form is what both implementations produce today and is the likeliest wrong answer",
+                              "The historical three-field form ss_ec || ss_pq || epk is the "
+                              "likeliest omission",
                   }}
     ct2 = bytes.fromhex(t1["encapsulation"][1]["c"])
     v["V3-06a"] = {"claim": "ct is bound in",
@@ -317,8 +308,10 @@ def group_2_9(t1: dict) -> dict[str, dict]:
                                   DS_HYBRID + ss_ec + ss_pq + epk + ct2
                                   + viewing_pk_ec + ek).digest()),
                               "assertion": "different"},
-                   "wrong": {"note": "the same ss -- the case SP 800-227 Section4.6.3's argument "
-                                     "turns on"}}
+                   "wrong": {"note": "the same ss. Hashing both ciphertexts in is what lets "
+                                     "the combiner stay IND-CCA when only one component KEM "
+                                     "is (Giacon-Heuer-Poettering, PKC 2018; the "
+                                     "KeyCombineCCA_H of SP 800-227 Section 4.6.3)"}}
     vpk2 = vp.encode_compressed(vp.mul(int.from_bytes(bytes([0x55]) * 32, "big")))
     v["V3-06b"] = {"claim": "viewing_pk_ec is bound in",
                    "given": {"viewing_pk_ec_a": hx(viewing_pk_ec),
@@ -344,24 +337,35 @@ def group_2_9(t1: dict) -> dict[str, dict]:
     tag = vp.view_tag(ss)
     v["V3-08"] = {"claim": "wire shape",
                   "given": {"epk": hx(epk), "view_tag": hx(tag), "ct": hx(ct)},
-                  "expect": {"ephemeralPubKey": hx(epk),
-                             "metadata": hx(tag) + hx(ct),
-                             "metadata_bytes": len(tag) + len(ct),
-                             "payload_bytes": len(epk) + len(tag) + len(ct)},
-                  "wrong": {"ct_then_view_tag": hx(ct) + hx(tag),
-                            "note": "Section2's field convention, which this variant does not use; "
-                                    "or ct || view_tag, which puts the view tag at "
-                                    "metadata[1088] -- the same length as the right answer, "
-                                    "so no length check distinguishes it"}}
-    v["V3-08a"] = {"claim": "the view tag is metadata[0]",
-                   "given": {"metadata": hx(tag) + hx(ct)},
-                   "expect": {"view_tag_at_index_0": hx(tag)},
-                   "wrong": {"leading_byte_of_ct": hx(ct[:vp.VIEW_TAG_BYTES]),
-                             "note": "reading the tag off ct rather than off metadata[0]. "
-                                     "At one byte this still agrees 1 time in 256, so it is "
-                                     "a scanner that misses most payments to it and finds "
-                                     "the occasional one -- an intermittent fault, which is "
-                                     "harder to chase than a clean empty scan"}}
+                  "expect": {"ephemeralPubKey": hx(epk) + hx(ct),
+                             "metadata": hx(tag),
+                             "ephemeralPubKey_bytes": len(epk) + len(ct),
+                             "payload_bytes": len(epk) + len(ct) + len(tag)},
+                  "wrong": {"ct_then_epk": hx(ct) + hx(epk),
+                            "superseded": {"ephemeralPubKey": hx(epk),
+                                           "metadata": hx(tag) + hx(ct)},
+                            "note": "ct || epk in ephemeralPubKey, which is the same length "
+                                    "as the right answer, so no length check distinguishes "
+                                    "it; and the superseded layout with ct in metadata, "
+                                    "which a conforming scanner skips on the "
+                                    "ephemeralPubKey length"}}
+    # ERC-5564's native-token block: selector 0xeeeeeeee, the 0xEeee...EEeE address, then the
+    # amount as 32 big-endian bytes. 1 ETH, whose low byte is zero.
+    token_block = (bytes.fromhex("eeeeeeee") + bytes.fromhex("ee" * 20)
+                   + (10**18).to_bytes(32, "big"))
+    assert len(token_block) == 56 and token_block[-1] != tag[0]
+    v["V3-08a"] = {"claim": "the view tag is metadata[0], and any later bytes are ignored",
+                   "given": {"ephemeralPubKey": hx(epk) + hx(ct),
+                             "metadata_view_tag_only": hx(tag),
+                             "metadata_with_token_block": hx(tag) + hx(token_block)},
+                   "expect": {"view_tag_at_index_0": hx(tag),
+                              "outcome": "both metadata values parse, to the same view tag"},
+                   "wrong": {"last_byte_of_metadata": hx(token_block[-1:]),
+                             "note": "requiring metadata to be exactly one byte, which skips "
+                                     "every payment from a sender that follows ERC-5564's "
+                                     "token-metadata recommendation; or reading the tag off "
+                                     "the end of metadata, which is the amount's low byte "
+                                     "once the token block is present"}}
 
     # ----------------------------------------------------------------------------------
     # V3-09..V3-15 -- RE-HOMED from the schemeId 2 set, which this tree no longer ships.
@@ -381,8 +385,8 @@ def group_2_9(t1: dict) -> dict[str, dict]:
     v_ec_seed = bytes([0x33]) * 32
     assert vp.encode_compressed(vp.mul(int.from_bytes(v_ec_seed, "big"))) == viewing_pk_ec
     delegated = v_ec_seed + kem_seed
-    assert not any(delegated[i:i + 32] == spending_seed for i in range(65)), \
-        "Section2.1's window scan would reject this fixture's own keygen seed"
+    assert spending_seed not in (delegated[0:32], delegated[32:64], delegated[64:96]), \
+        "Section2.1's component check would reject this fixture's own keygen seed"
     keygen_seed = spending_seed + delegated
     spending_pk = vp.encode_compressed(vp.mul(int.from_bytes(spending_seed, "big")))
     meta = spending_pk + viewing_pk_ec + bytes.fromhex(kg["ek"])
@@ -414,9 +418,9 @@ def group_2_9(t1: dict) -> dict[str, dict]:
                       "spending_seed_n_minus_1": f"{vp.N - 1:064x}",
                       "viewing_ec_seed_0": hx(bytes(32))}},
                   "expect": {"outcome": "error, error, accepted, error"},
-                  "wrong": {"note": "reducing the seed mod n instead of rejecting it. Section1's "
-                                    "counter-reduction is for the offset BASE, not for a "
-                                    "seed: a library that reduces silently turns "
+                  "wrong": {"note": "reducing the seed mod n instead of rejecting it. "
+                                    "Nothing in this document reduces mod n: a library "
+                                    "that reduces silently turns "
                                     "spending_seed = n into spending_seed = 0, and every "
                                     "payment to the resulting meta-address is spendable by "
                                     "anyone. n - 1 is the positive control -- an off-by-one "
@@ -501,23 +505,26 @@ def group_2_9(t1: dict) -> dict[str, dict]:
                                     "every announcement ever published. Raising on the tag "
                                     "mismatch is the other error: announce() is "
                                     "permissionless, so an error path there is a scanner "
-                                    "denial of service (Section2.4)"}}
+                                    "denial of service (Section2.7)"}}
 
-    v["V3-15"] = {"claim": "a malformed ct is a skip at the entry point, not an error",
-                  "given": {"metadata_lengths": [1088, 1089, 1090],
-                            "ephemeralPubKey_lengths": [32, 33]},
-                  "expect": {"outcome": "skip for every length but 1089 / 33, which is "
-                                        "processed"},
+    v["V3-15"] = {"claim": "a malformed announcement is a skip at the entry point, not an "
+                           "error",
+                  "given": {"ephemeralPubKey_lengths": [33, 1120, 1121, 1122],
+                            "metadata_lengths": [0, 1, 57]},
+                  "expect": {"outcome": "skip unless ephemeralPubKey is 1121 bytes and "
+                                        "metadata is at least 1 byte; 1121 / 1 and "
+                                        "1121 / 57 are processed"},
                   "wrong": {"note": "raising, or propagating a library exception. Anyone can "
                                     "call announce() with any bytes, so a scanner that errors "
                                     "on shape stops at the first announcement an attacker "
                                     "publishes -- and it costs the attacker one transaction. "
-                                    "The 1089 case is the positive control"}}
+                                    "33 is the superseded epk-only field. 1121 / 1 and "
+                                    "1121 / 57 are the positive controls"}}
 
     return v
 
 
-BUILDERS = {"1": lambda t1: group_1(), "2.9": group_2_9}
+BUILDERS = {"1": lambda t1: group_1(), "2": group_2}
 
 
 def canonical(row) -> str:
@@ -723,9 +730,9 @@ def main(argv: list[str]) -> int:
     # ran one wave at a time. Then, a run rebuilt part of the set and had to carry the rest
     # of the committed manifest over or it would name fewer files than ship. Now every run
     # builds every group, so a carried-over entry can only be one thing: a file that has
-    # stopped shipping, still named. That is not hypothetical -- the entries for
-    # `section-2.json` and `section-5.json` outlived both files, and `--check` passed anyway,
-    # because it verifies the files that are present rather than the names that are listed.
+    # stopped shipping, still named. That is not hypothetical -- entries for two files from
+    # an earlier layout outlived both files, and `--check` passed anyway, because it verifies
+    # the files that are present rather than the names that are listed.
     # Sorted by file name so the byte order does not depend on iteration order.
     mf = dest / "manifest.json"
     merged: dict[str, dict] = dict(manifest)
