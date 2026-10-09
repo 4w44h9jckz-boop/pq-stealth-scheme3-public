@@ -1,21 +1,23 @@
 <!--
-Draft of the Ethereum Magicians thread for spec/ERC-VVVV-schemeid3.md. Post it in the ERCs
-category, then put the thread URL in the spec's `discussions-to` field. Replace the
-<placeholders> first. The gas figures below are checked against the committed receipts by
-tools/check_measured.py, so rerun it if you edit them.
+The opening post of the Ethereum Magicians thread for spec/ERC-VVVV-schemeid3.md, posted on
+2026-10-09 in the ERCs category at
+https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923
+The thread is the live copy. Once the editors assign a number, retitle the thread to
+`ERC-N: ...` and add the ERCs pull request to the post. The gas figures below are checked
+against the committed receipts by tools/check_measured.py, so rerun it if you edit them.
 -->
 
 # Title
 
-ERC-XXXX: Hybrid post-quantum stealth addresses (ERC-5564 schemeId 3)
+Hybrid post-quantum stealth addresses (ERC-5564 schemeId 3)
 
 # Body
 
 Hi all. We'd like feedback on a draft ERC that adds a post-quantum scheme to ERC-5564 stealth
 addresses.
 
-Draft: <link to the ERCs pull request>
-Reference implementation, test vectors and gas harness: <link to the repository>
+Draft: https://github.com/namnc/pq-stealth-scheme3-public/blob/main/spec/ERC-VVVV-schemeid3.md
+Reference implementation, test vectors and gas harness: https://github.com/namnc/pq-stealth-scheme3-public/tree/main
 
 ## Summary
 
@@ -95,4 +97,4 @@ scheme.
 6. **Scanning cost.** Every announcement needs a decapsulation before the view tag can be
    checked. How much does that matter for wallets and scanning services?
 
-<author names and handles>
+By Nam Ngo (@namnc), Pierre Daix-Moreux (@dmpierre), kassandra.eth (@kassandraoftroy)
