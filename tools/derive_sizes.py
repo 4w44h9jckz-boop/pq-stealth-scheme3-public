@@ -48,6 +48,9 @@ VIEW_TAG = 1              # §3 rule 1: the FIRST BYTE of `metadata`, in EVERY a
                           # announced `stealthAddress` was made the authoritative check
                           # (§2.5 MUST) and the tag was narrowed to a prefilter.
 SCALAR = 32               # a secp256k1 scalar, or a 32-byte seed
+# ERC-5564's recommended token metadata after the view tag: a 4-byte function selector, a
+# 20-byte token address and a 32-byte amount. Optional in `schemeId` 3 (§3 rule 3).
+TOKEN_METADATA = 4 + 20 + 32
 SPENDING_PK = 33          # secp256k1, SEC1 compressed
 VIEWING_PK_EC = 33
 
@@ -55,6 +58,8 @@ VIEWING_PK_EC = 33
 # behind.
 ANNOUNCE_ERC = {
     "schemeId 3 announcement":  (SEC1_COMPRESSED + CT + VIEW_TAG,     1_122),
+    "schemeId 3 announcement, token metadata":
+        (SEC1_COMPRESSED + CT + VIEW_TAG + TOKEN_METADATA,            1_178),
 }
 
 # §3's shape is the PAIR of field lengths, not the total, and the distinction is
@@ -63,10 +68,12 @@ ANNOUNCE_ERC = {
 # call that a collision.
 #
 # (`ephemeralPubKey`, `metadata`) per row. `ct` rides in `ephemeralPubKey` after `epk`, so
-# `metadata` is ERC-5564's own: the view tag, which is all the reference sender emits. A
-# sender MAY append ERC-5564's 56-byte token block; that variant is not measured here.
+# `metadata` is ERC-5564's own: the view tag, which is all the reference sender emits, and
+# optionally ERC-5564's token metadata after it.
 SHAPES = {
     "schemeId 3 announcement":  (SEC1_COMPRESSED + CT,  VIEW_TAG),
+    "schemeId 3 announcement, token metadata":
+        (SEC1_COMPRESSED + CT,  VIEW_TAG + TOKEN_METADATA),
 }
 
 # The `schemeId` each shape belongs to, so the gas harness can address them. Stated here
@@ -75,6 +82,7 @@ SHAPES = {
 # scheme.
 SHAPE_SCHEME_ID = {
     "schemeId 3 announcement": 3,
+    "schemeId 3 announcement, token metadata": 3,
 }
 
 # Pairs this tree declares indistinguishable by length. Asserted rather than left as a
@@ -155,7 +163,7 @@ def main() -> int:
     print("\nthe announcement payloads, from the same primitives")
     for name, (derived, quoted) in ANNOUNCE_ERC.items():
         mark = "ok" if derived == quoted else "MISMATCH"
-        print(f"  {name:<28}{derived:>6} B   spec {quoted:>6}   {mark}")
+        print(f"  {name:<42}{derived:>6} B   spec {quoted:>6}   {mark}")
         if derived != quoted:
             bad.append(f"{name}: derived {derived} != quoted {quoted}")
 
@@ -165,7 +173,7 @@ def main() -> int:
         total = epk_len + md_len
         quoted = ANNOUNCE_ERC[name][1]
         mark = "ok" if total == quoted else "MISMATCH"
-        print(f"  {name:<38}({epk_len:>4}, {md_len:>5})  = {total:>5} B   "
+        print(f"  {name:<42}({epk_len:>4}, {md_len:>5})  = {total:>5} B   "
               f"spec {quoted:>5}   {mark}")
         if total != quoted:
             bad.append(f"{name}: shape ({epk_len}, {md_len}) totals {total} != §3's {quoted}")

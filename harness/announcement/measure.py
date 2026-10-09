@@ -15,6 +15,7 @@ from harness.erc5564 import (  # noqa: E402
     ANNOUNCER,
     ANNOUNCER_SHA256,
     install_announcer,
+    native_token_metadata,
     send_announcement,
 )
 from harness.eip7623 import (  # noqa: E402
@@ -32,6 +33,8 @@ from tools import derive_sizes  # noqa: E402
 
 OUT = Path(__file__).resolve().parent / "measured.json"
 FIXED_STEALTH = bytes.fromhex("6dbb67f21b650304b5f459833188f52db07c2b43")
+# The amount in the token-metadata row: 1 ETH, the value `harness/payment` funds.
+TOKEN_METADATA_AMOUNT = 10**18
 
 
 @dataclass(frozen=True)
@@ -73,17 +76,24 @@ def _send(url: str, case: Case, *, zero_payload: bool = False) -> dict[str, int]
 
 
 def _cases(context: Context) -> list[Case]:
-    """One measured row per schemeId.
+    """One measured row per schemeId, plus schemeId 3 with ERC-5564's token metadata.
 
     schemeId 3 announces the real fixture. schemeId 1 has no fixture -- ERC-5564 does not
     say what a classical announcement's bytes are, so there is nothing to derive one from --
     and its row is therefore CONSTRUCTED: a payload of the right widths carrying no zero
     byte. It is a reference point for the ratio, not a sample of anything.
+
+    The token-metadata row is the real fixture with ERC-5564's native-token metadata for 1 ETH
+    appended after the view tag, which §3 allows a sender to add.
     """
     fixture = context.fixture
     shape = derive_sizes.SHAPES["schemeId 3 announcement"]
     if (len(fixture.ephemeral_pub_key), len(fixture.metadata)) != shape:
-        raise RuntimeError("fixture announcement does not match Section 2.4's announcement shape")
+        raise RuntimeError("fixture announcement does not match Section 3's announcement shape")
+    with_token = fixture.metadata + native_token_metadata(TOKEN_METADATA_AMOUNT)
+    token_shape = derive_sizes.SHAPES["schemeId 3 announcement, token metadata"]
+    if (len(fixture.ephemeral_pub_key), len(with_token)) != token_shape:
+        raise RuntimeError("token-metadata announcement does not match Section 3's shape")
     return [
         Case(
             "classical_reference",
@@ -100,6 +110,14 @@ def _cases(context: Context) -> list[Case]:
             fixture.stealth_address,
             fixture.ephemeral_pub_key,
             fixture.metadata,
+        ),
+        Case(
+            "scheme3_token_metadata",
+            3,
+            "real_sample_plus_token",
+            fixture.stealth_address,
+            fixture.ephemeral_pub_key,
+            with_token,
         ),
     ]
 
@@ -201,20 +219,20 @@ def render(artifact: dict) -> str:
     lines = [
         "ERC-5564 announcement gas, canonical runtime, Prague",
         "",
-        f"{'case':<22}{'kind':<22}{'payload':>9}{'gasUsed':>10}{'rule':>10}"
+        f"{'case':<24}{'kind':<24}{'payload':>9}{'gasUsed':>10}{'rule':>10}"
         f"{'all-nonzero':>13}",
-        "-" * 86,
+        "-" * 90,
     ]
     for result in artifact["results"]:
         primary = result["transaction"]
         lines.append(
-            f"{result['name']:<22}{result['kind']:<22}"
+            f"{result['name']:<24}{result['kind']:<24}"
             f"{result['ephemeral_pub_key_bytes'] + result['metadata_bytes']:>9}"
             f"{primary['gas_used']:>10}"
             f"{('floor' if floor_binds(primary) else 'standard'):>10}"
             f"{result['upper_bound_gas']:>13}"
         )
-    lines += ["-" * 86,
+    lines += ["-" * 90,
               "all-nonzero is DERIVED from the row beside it, not a second measurement."]
     return "\n".join(lines)
 

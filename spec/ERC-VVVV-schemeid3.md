@@ -522,13 +522,15 @@ has no fixture, so its rows use constructed payloads of the same lengths with no
 |---|---|---|---|---|---|
 | 1 (classical) | 34 B | 292 B | 28 313 | standard | 1.00x |
 | 3 | 1 122 B | 1 380 B | 69 330 | EIP-7623 floor | 2.45x |
+| 3, with token metadata | 1 178 B | 1 412 B | 70 550 | EIP-7623 floor | 2.49x |
 
 The `schemeId` 3 receipt equals the [EIP-7623](https://eips.ethereum.org/EIPS/eip-7623)
 calldata floor exactly: 21 000 plus 10 per calldata token. So execution is not charged, and the
 figure is set by calldata size alone. The classical receipt is above its floor and pays the
-standard rate. The 2.45x ratio therefore compares two pricing rules, and any calldata repricing
-will move it. The `schemeId` 3 row carries the view tag alone in `metadata`. A sender that
-appends ERC-5564's token metadata adds 56 bytes of calldata, and that variant is not measured.
+standard rate. The ratios therefore compare two pricing rules, and any calldata repricing will
+move them. The first `schemeId` 3 row carries the view tag alone in `metadata`. The second
+appends ERC-5564's 56-byte native-token metadata for 1 ETH, which Section 3 allows, and costs
+1 220 gas more.
 
 **Registration**, a first-time `registerKeys` call with a fresh registrant:
 
