@@ -8,11 +8,11 @@ Every vector is a JSON object with six fields, e.g.
 {
   "id":       "V1-03",
   "spec":     "Section 1",
-  "claim":    "an implementation MUST fail rather than continue past counter = 255",
+  "claim":    "the range check MUST reject base = 0",
   "given":    { "base": "0x0000…0000" },
-  "expect":   { "counter": 1, "offset": "0x…" },
-  "wrong":    "counter 0 accepted — an implementation that does not range-check base
-               returns offset = 0, and every payment derived from it is unspendable"
+  "expect":   { "outcome": "fail" },
+  "wrong":    "offset = 0 accepted — an implementation that does not range-check base makes
+               the stealth address the address of spending_pk itself"
 }
 ```
 
@@ -29,12 +29,12 @@ Every vector is a JSON object with six fields, e.g.
 
 | id | claim | given | expect | wrong |
 |---|---|---|---|---|
-| V1-01 | `H(ss) = SHA256(DS_offset ‖ ss)`, reduced | a fixed `ss` | `base`, `offset`, `counter = 0` | — |
+| V1-01 | `H(ss) = SHA256(DS_offset ‖ ss)`, range-checked | a fixed `ss` | `base`, and `offset = base` | — |
 | V1-02 | **every digest is big-endian** | an `ss` whose digest starts `0x01` and ends `0x80` | the integer, MSB first | little-endian read gives a different scalar, therefore a different address, therefore **funds the recipient cannot spend**. Silent and total |
-| V1-03 | reduction MUST reject `base = 0` | `base = 0x00…00` | `counter = 1`, `offset = SHA256(DS ‖ base ‖ 0x01)` | `counter = 0` and `offset = 0` — no range check |
-| V1-04 | reduction MUST reject `base = n` | `base = n_secp256k1` | `counter = 1` | accepted as valid; some libraries reduce mod n silently and return 0 |
-| V1-05 | `base = n − 1` is **valid** | `base = n − 1` | `counter = 0` | rejected — an off-by-one in the bound loses a legitimate payment |
-| V1-06 | the counter byte is a single byte appended | a `base` forced to counter 1 | a pinned 32-byte output | `u32` or `u64` counter encoding; ASCII `"1"` |
+| V1-03 | the range check MUST reject `base = 0` | `base = 0x00…00` | failure | `offset = 0` — no range check, and the stealth address is then the address of `spending_pk` itself |
+| V1-04 | the range check MUST reject `base = n` | `base = n_secp256k1` | failure | reduced mod n to 0, which some libraries do silently |
+| V1-05 | `base = n − 1` is **valid** | `base = n − 1` | `offset = n − 1` | rejected — an off-by-one in the bound loses a legitimate payment |
+| V1-06 | ~~the counter byte is a single byte appended~~ WITHDRAWN: Section 1 no longer retries with a counter | — | — | — |
 | V1-07 | `view_tag = SHA256(DS_viewtag ‖ ss)[0]` | a fixed `ss` | one byte | **the superseded eight-byte width**, `[0..8]`, which matches nothing a conforming sender emits; taking `[31]` instead of `[0]`; or the leading byte of `H(ss)` instead of a separate digest |
 
 ## 3. Section2 — schemeId 3
@@ -54,7 +54,7 @@ Every vector is a JSON object with six fields, e.g.
 | V3-08 | wire shape | the sender above | **`epk ‖ ct`** 1 121 in `ephemeralPubKey`, `view_tag` 1 in `metadata`, 1 122 B | `ct ‖ epk`, the same length as the right answer, so no length check distinguishes it; and the superseded layout with `ct` in `metadata`, which a conforming scanner skips on the `ephemeralPubKey` length |
 | V3-08a | the view tag is `metadata[0]`, and later bytes are ignored | the same `ephemeralPubKey` with `metadata` = the view tag alone, then the view tag followed by ERC-5564's 56-byte native-token block | both parse, to the same view tag | **requiring `metadata` to be exactly one byte**, which skips every payment from a sender following ERC-5564's token-metadata recommendation; or reading the tag off the end of `metadata`, which is the amount's low byte once the token block is there |
 | V3-09 | **keygen MUST be deterministic in the seed** | a 128-byte seed whose `kem_seed` is ACVP keygen `(d, z)`, so `ek` is NIST's value | the 1 250-byte meta-address, the 96-byte tracking key, the 32-byte master | calling the KEM's randomness-taking keygen and ignoring `kem_seed` — the entry point most ML-KEM APIs offer first. The meta-address is well formed and registration succeeds; nothing fails until the owner restores from seed, gets a different `dk`, and can decapsulate no payment ever made to the registered `ek` |
-| V3-10 | `spending_seed` and `viewing_ec_seed` MUST each be a valid secp256k1 scalar | 128-byte seeds differing only in one 32-byte half: `0`, `n`, `n − 1`, and `viewing_ec_seed = 0` | error, error, **accepted**, error | reducing the seed mod n rather than rejecting it. Section1's counter-reduction is for the offset *base*, not for a seed: `spending_seed = n` becomes `0`, and every payment to the resulting meta-address is spendable by anyone. `n − 1` is the positive control |
+| V3-10 | `spending_seed` and `viewing_ec_seed` MUST each be a valid secp256k1 scalar | 128-byte seeds differing only in one 32-byte half: `0`, `n`, `n − 1`, and `viewing_ec_seed = 0` | error, error, **accepted**, error | reducing the seed mod n rather than rejecting it. Nothing in this document reduces mod n: `spending_seed = n` becomes `0`, and every payment to the resulting meta-address is spendable by anyone. `n − 1` is the positive control |
 | V3-11 | decoding MUST reject a meta-address length other than 1 250 | 1 249, 1 250, 1 251 | error, accepted, error | slicing `[0:33]`, `[33:66]`, `[66:]` with no length check: 1 251 decodes with a trailing byte ignored, 1 249 yields a 1 183-byte `ek` the KEM rejects at the first payment rather than at decode |
 | V3-12 | 33 bytes of the right length can still be a **non-point** | `0x02 ‖ x` for `x = 5`, the smallest `x` with no `y` on the curve; then a valid key | error at decode, then accepted | checking the length and the `0x02`/`0x03` tag byte and storing the bytes. The ECDH that follows throws from inside a curve library, far from the meta-address that caused it — or, in a library that does not validate, returns a value on the wrong curve |
 | V3-13 | `address = keccak256(uncompressed(pk)[1..])[12..32]` | a derived `stealth_pk`, both encodings | the 20-byte address and its EIP-55 form | keccak of the *compressed* form; keccak *with* the `0x04` prefix; `[0..20]` rather than `[12..32]`. Each is 20 well-formed bytes and each is a different address — the payment is lost to a chain address nobody holds a key for, not to an error |

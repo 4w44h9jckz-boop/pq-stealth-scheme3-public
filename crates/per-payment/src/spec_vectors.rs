@@ -1,7 +1,7 @@
 //! Spec vectors from `vectors/section-*.json`.
 //!
 //! Expected bytes come from the committed fixtures, not from this implementation.
-//! `reduce_to_scalar` is crate-private; this module stays under `src/` so it can call it.
+//! `check_offset` is crate-private; this module stays under `src/` so it can call it.
 
 use super::*;
 use pqsa_core::{Bytes32, Error, StealthScheme, VIEW_TAG_BYTES};
@@ -14,9 +14,8 @@ const SECTION_1: &str = include_str!("../../../vectors/section-1.json");
 const SECTION_2: &str = include_str!("../../../vectors/section-2.json");
 const ACVP: &str = include_str!("../../../vectors/tier1/ml-kem-768-acvp.json");
 
-const SECTION_1_CASES: &[&str] = &[
-    "V1-01", "V1-02", "V1-03", "V1-04", "V1-05", "V1-06", "V1-07",
-];
+// V1-06 is withdrawn: §1 no longer retries with a counter.
+const SECTION_1_CASES: &[&str] = &["V1-01", "V1-02", "V1-03", "V1-04", "V1-05", "V1-07"];
 const SECTION_2_CASES: &[&str] = &[
     "V3-01", "V3-02", "V3-02a", "V3-03", "V3-04", "V3-05", "V3-06", "V3-06a", "V3-06b", "V3-07",
     "V3-08", "V3-08a", "V3-09", "V3-10", "V3-11", "V3-12", "V3-13", "V3-14", "V3-15",
@@ -162,10 +161,9 @@ fn v1_01_offset_of_ss() {
     let expect = obj(v, "expect");
     let base = sha256(&[DS_OFFSET, &ss]);
     assert_eq!(encode(&base), s(expect, "base"));
-    let (offset, _) = derive_from_shared_secret(&ss).expect("this ss reduces at counter 0");
+    let (offset, _) = derive_from_shared_secret(&ss).expect("this base is in range");
     assert_eq!(encode(&offset), s(expect, "offset"));
-    assert_eq!(u64_field(expect, "counter"), 0, "offset == unhashed base");
-    assert_eq!(offset, base);
+    assert_eq!(offset, base, "the offset is base itself");
 }
 
 #[test]
@@ -173,7 +171,7 @@ fn v1_02_digest_is_big_endian() {
     let v = row(section_1(), "V1-02");
     let given = obj(v, "given");
     let base = b32(given, "base");
-    let offset = reduce_to_scalar(&base).expect("this base is already a valid scalar");
+    let offset = check_offset(&base).expect("this base is already a valid scalar");
     assert_eq!(encode(&offset), s(obj(v, "expect"), "offset_big_endian"));
     assert_ne!(
         encode(&offset),
@@ -183,63 +181,32 @@ fn v1_02_digest_is_big_endian() {
 }
 
 #[test]
-fn v1_03_base_zero_retries() {
+fn v1_03_base_zero_fails() {
     let v = row(section_1(), "V1-03");
     let base = b32(obj(v, "given"), "base");
-    let expect = obj(v, "expect");
-    assert!(
-        pqsa_ec::public_point(&base).is_err(),
-        "counter 0 must not accept 0"
-    );
-    let offset = reduce_to_scalar(&base).expect("counter 1 yields a valid scalar");
-    assert_eq!(u64_field(expect, "counter"), 1);
-    assert_eq!(encode(&offset), s(expect, "offset"));
-    assert_eq!(offset, sha256(&[DS_OFFSET, &base, &[1]]));
-    assert_ne!(encode(&offset), s(obj(v, "wrong"), "offset"));
+    assert_eq!(s(obj(v, "expect"), "outcome"), "fail");
+    assert!(matches!(check_offset(&base), Err(Error::NoValidScalar)));
+    assert_eq!(s(obj(v, "wrong"), "offset"), encode(&[0u8; 32]));
 }
 
 #[test]
-fn v1_04_base_n_retries() {
+fn v1_04_base_n_fails() {
     let v = row(section_1(), "V1-04");
     let base = b32(obj(v, "given"), "base");
-    let expect = obj(v, "expect");
+    assert_eq!(s(obj(v, "expect"), "outcome"), "fail");
     assert!(
-        pqsa_ec::public_point(&base).is_err(),
+        matches!(check_offset(&base), Err(Error::NoValidScalar)),
         "n is not a valid scalar; a silent reduce-mod-n would yield 0"
     );
-    let offset = reduce_to_scalar(&base).expect("counter 1 yields a valid scalar");
-    assert_eq!(u64_field(expect, "counter"), 1);
-    assert_eq!(encode(&offset), s(expect, "offset"));
-    assert_eq!(offset, sha256(&[DS_OFFSET, &base, &[1]]));
 }
 
 #[test]
 fn v1_05_n_minus_1_accepted() {
     let v = row(section_1(), "V1-05");
     let base = b32(obj(v, "given"), "base");
-    let expect = obj(v, "expect");
-    let offset = reduce_to_scalar(&base).expect("n-1 is a valid scalar");
-    assert_eq!(u64_field(expect, "counter"), 0);
-    assert_eq!(encode(&offset), s(expect, "offset"));
+    let offset = check_offset(&base).expect("n-1 is a valid scalar");
+    assert_eq!(encode(&offset), s(obj(v, "expect"), "offset"));
     assert_eq!(offset, base);
-}
-
-#[test]
-fn v1_06_counter_is_one_byte() {
-    let v = row(section_1(), "V1-06");
-    let given = obj(v, "given");
-    let base = b32(given, "base");
-    assert_eq!(u64_field(given, "counter"), 1);
-    let digest = sha256(&[DS_OFFSET, &base, &[1]]);
-    assert_eq!(encode(&digest), s(obj(v, "expect"), "digest"));
-    let wrong = obj(v, "wrong");
-    assert_ne!(encode(&digest), s(wrong, "u32be"));
-    assert_ne!(encode(&digest), s(wrong, "u64be"));
-    assert_ne!(encode(&digest), s(wrong, "ascii"));
-    assert_eq!(
-        encode(&sha256(&[DS_OFFSET, &base, &1u32.to_be_bytes()])),
-        s(wrong, "u32be")
-    );
 }
 
 #[test]

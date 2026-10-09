@@ -232,7 +232,7 @@
         "outcome": "error, error, accepted, error"
       },
       "wrong": {
-        "note": "reducing the seed mod n instead of rejecting it. Section1's counter-reduction is for the offset BASE, not for a seed: a library that reduces silently turns spending_seed = n into spending_seed = 0, and every payment to the resulting meta-address is spendable by anyone. n - 1 is the positive control -- an off-by-one in the bound rejects a legitimate seed"
+        "note": "reducing the seed mod n instead of rejecting it. Nothing in this document reduces mod n: a library that reduces silently turns spending_seed = n into spending_seed = 0, and every payment to the resulting meta-address is spendable by anyone. n - 1 is the positive control -- an off-by-one in the bound rejects a legitimate seed"
       }
     },
     "V3-11": {

@@ -63,47 +63,36 @@ HDR = "| id | claim | given | expect | wrong |\n|---|---|---|---|---|\n"
 
 
 def pin_section_1() -> None:
-    """§1 against `vectors/section-1.json`, including retry *outputs*, not just `counter >= 1`."""
+    """§1 against `vectors/section-1.json`, including the range check's failures."""
     v1 = json.loads((ROOT / "vectors/section-1.json").read_text(encoding="utf-8"))["vectors"]
 
     v = v1["V1-01"]
-    base, scalar, counter = vp.h_of_ss(bytes.fromhex(v["given"]["ss"]))
+    base, scalar = vp.h_of_ss(bytes.fromhex(v["given"]["ss"]))
     case("V1-01 offset digest", base.hex(), v["expect"]["base"])
-    case("V1-01 counter", counter, v["expect"]["counter"])
     case("V1-01 offset", f"{scalar:064x}", v["expect"]["offset"])
 
     v = v1["V1-02"]
     base = bytes.fromhex(v["given"]["base"])
     case("V1-02 big-endian scalar",
-         f"{int.from_bytes(base, 'big') % vp.N:064x}",
+         f"{vp.offset_scalar(base):064x}",
          v["expect"]["offset_big_endian"])
     case("V1-02 is not little-endian",
          f"{int.from_bytes(base, 'little') % vp.N:064x}" ==
          v["expect"]["offset_big_endian"], False)
 
-    v = v1["V1-03"]
-    scalar, counter = vp.reduce_to_scalar(bytes.fromhex(v["given"]["base"]))
-    case("V1-03 counter", counter, v["expect"]["counter"])
-    case("V1-03 offset", f"{scalar:064x}", v["expect"]["offset"])
-
-    v = v1["V1-04"]
-    scalar, counter = vp.reduce_to_scalar(bytes.fromhex(v["given"]["base"]))
-    case("V1-04 counter", counter, v["expect"]["counter"])
-    case("V1-04 offset", f"{scalar:064x}", v["expect"]["offset"])
+    for rid in ("V1-03", "V1-04"):
+        v = v1[rid]
+        try:
+            vp.offset_scalar(bytes.fromhex(v["given"]["base"]))
+            outcome = "accepted"
+        except ValueError:
+            outcome = "fail"
+        case(f"{rid} outcome", outcome, v["expect"]["outcome"])
 
     v = v1["V1-05"]
-    scalar, counter = vp.reduce_to_scalar(bytes.fromhex(v["given"]["base"]))
-    case("V1-05 counter", counter, v["expect"]["counter"])
+    scalar = vp.offset_scalar(bytes.fromhex(v["given"]["base"]))
     case("V1-05 offset", f"{scalar:064x}", v["expect"]["offset"])
-
-    v = v1["V1-06"]
-    digest = hashlib.sha256(
-        vp.DS_OFFSET + bytes.fromhex(v["given"]["base"]) + bytes([1])
-    ).digest()
-    case("V1-06 single-byte counter", digest.hex(), v["expect"]["digest"])
-    case("V1-06 is not u32be", digest.hex() == v["wrong"]["u32be"], False)
-    case("V1-06 is not u64be", digest.hex() == v["wrong"]["u64be"], False)
-    case("V1-06 is not ascii", digest.hex() == v["wrong"]["ascii"], False)
+    case("V1-06 is withdrawn", "V1-06" in v1, False)
 
     v = v1["V1-07"]
     tag = vp.view_tag(bytes.fromhex(v["given"]["ss"]))

@@ -138,17 +138,17 @@ def hx(b: bytes) -> str:
 def group_1() -> dict[str, dict]:
     v: dict[str, dict] = {}
     ss = bytes(range(32))
-    base, scalar, counter = vp.h_of_ss(ss)
+    base, scalar = vp.h_of_ss(ss)
     v["V1-01"] = {
-        "claim": "H(ss) = SHA256(DS_offset || ss), reduced",
+        "claim": "H(ss) = SHA256(DS_offset || ss), range-checked",
         "given": {"ss": hx(ss)},
-        "expect": {"base": hx(base), "offset": f"{scalar:064x}", "counter": counter},
+        "expect": {"base": hx(base), "offset": f"{scalar:064x}"},
     }
 
     # V1-02 pins BIG-ENDIAN. The `wrong` column is the whole point: a little-endian read gives
     # a different scalar, a different address, and funds nobody can spend. So the vector states
     # the wrong answer too, computed the wrong way on purpose.
-    be = int.from_bytes(base, "big") % vp.N
+    be = vp.offset_scalar(base)
     le = int.from_bytes(base, "little") % vp.N
     v["V1-02"] = {
         "claim": "every digest is big-endian",
@@ -159,47 +159,35 @@ def group_1() -> dict[str, dict]:
                           "the recipient cannot spend. Silent and total"},
     }
 
+    # V1-03 and V1-04 are the two ways out of range. Neither is reachable from a findable `ss`,
+    # so `base` is supplied directly; the outcome is a failure, after which the sender draws
+    # new randomness.
     zero = bytes(32)
-    s0, c0 = vp.reduce_to_scalar(zero)
     v["V1-03"] = {
-        "claim": "reduction MUST reject base = 0",
+        "claim": "the range check MUST reject base = 0",
         "given": {"base": hx(zero)},
-        "expect": {"counter": c0, "offset": f"{s0:064x}"},
-        "wrong": {"counter": 0, "offset": f"{0:064x}", "note": "no range check"},
+        "expect": {"outcome": "fail"},
+        "wrong": {"offset": f"{0:064x}",
+                  "note": "no range check: offset 0 makes the stealth address the address of "
+                          "spending_pk itself, which links the payment to the registered key"},
     }
 
     nb = vp.N.to_bytes(32, "big")
-    sn, cn = vp.reduce_to_scalar(nb)
     v["V1-04"] = {
-        "claim": "reduction MUST reject base = n",
+        "claim": "the range check MUST reject base = n",
         "given": {"base": hx(nb)},
-        "expect": {"counter": cn, "offset": f"{sn:064x}"},
-        "wrong": {"note": "accepted as valid; some libraries reduce mod n silently and "
-                          "return 0"},
+        "expect": {"outcome": "fail"},
+        "wrong": {"offset_reduced_mod_n": f"{vp.N % vp.N:064x}",
+                  "note": "reducing mod n instead of failing, which some libraries do silently "
+                          "and which gives offset 0"},
     }
 
     n1 = (vp.N - 1).to_bytes(32, "big")
-    s1, c1 = vp.reduce_to_scalar(n1)
     v["V1-05"] = {
         "claim": "base = n - 1 is valid",
         "given": {"base": hx(n1)},
-        "expect": {"counter": c1, "offset": f"{s1:064x}"},
+        "expect": {"offset": f"{vp.offset_scalar(n1):064x}"},
         "wrong": {"note": "rejected -- an off-by-one in the bound loses a legitimate payment"},
-    }
-
-    # V1-06: the counter byte is ONE byte appended. The named wrong answers are a u32/u64
-    # encoding and the ASCII digit, so all three are emitted.
-    forced = zero  # reduces at counter 1, per V1-03
-    one = hashlib.sha256(vp.DS_OFFSET + forced + bytes([1])).digest()
-    v["V1-06"] = {
-        "claim": "the counter byte is a single byte appended",
-        "given": {"base": hx(forced), "counter": 1},
-        "expect": {"digest": hx(one)},
-        "wrong": {
-            "u32be": hx(hashlib.sha256(vp.DS_OFFSET + forced + (1).to_bytes(4, "big")).digest()),
-            "u64be": hx(hashlib.sha256(vp.DS_OFFSET + forced + (1).to_bytes(8, "big")).digest()),
-            "ascii": hx(hashlib.sha256(vp.DS_OFFSET + forced + b"1").digest()),
-        },
     }
 
     tag = vp.view_tag(ss)
@@ -214,7 +202,8 @@ def group_1() -> dict[str, dict]:
                 hx(hashlib.sha256(vp.DS_VIEWTAG + ss).digest()[31:]),
             "leading_byte_of_H_ss": hx(base[:1]),
             "note": "the tag was eight bytes until the announced stealthAddress became the "
-                    "authoritative check (2.4 MUST) and the tag was narrowed to a prefilter; "
+                    "authoritative check (Section 2.5 MUST) and the tag was narrowed to a "
+                    "prefilter; "
                     "an implementation carrying the old width matches nothing",
         },
     }
@@ -429,9 +418,9 @@ def group_2(t1: dict) -> dict[str, dict]:
                       "spending_seed_n_minus_1": f"{vp.N - 1:064x}",
                       "viewing_ec_seed_0": hx(bytes(32))}},
                   "expect": {"outcome": "error, error, accepted, error"},
-                  "wrong": {"note": "reducing the seed mod n instead of rejecting it. Section1's "
-                                    "counter-reduction is for the offset BASE, not for a "
-                                    "seed: a library that reduces silently turns "
+                  "wrong": {"note": "reducing the seed mod n instead of rejecting it. "
+                                    "Nothing in this document reduces mod n: a library "
+                                    "that reduces silently turns "
                                     "spending_seed = n into spending_seed = 0, and every "
                                     "payment to the resulting meta-address is spendable by "
                                     "anyone. n - 1 is the positive control -- an off-by-one "

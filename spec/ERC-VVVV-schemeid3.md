@@ -64,7 +64,6 @@ described in RFC 2119 and RFC 8174.
 Notation:
 
 - `a || b` is byte concatenation, and `x[i..j]` is bytes `i` (inclusive) to `j` (exclusive) of `x`.
-- `u8(c)` is the single byte with value `c`, for `0 <= c <= 255`.
 - `u256be(b)` reads 32 bytes as an unsigned integer, most significant byte first. Every digest
   below that is used as a number is read this way, both for range checks and for the scalar
   that results.
@@ -95,20 +94,17 @@ ML-KEM-768 is as specified in FIPS 203. This document uses it as follows:
 
 ```
 base = SHA256("pq-stealth/offset/v1" || ss)
-for counter in 0, 1, ..., 255:
-    candidate = base                                                   if counter = 0
-              = SHA256("pq-stealth/offset/v1" || base || u8(counter))  otherwise
-    if 0 < u256be(candidate) < n:
-        H(ss) = u256be(candidate); stop
-fail
+if 0 < u256be(base) < n:  H(ss) = u256be(base)
+else:                     fail
 
 view_tag = SHA256("pq-stealth/view-tag/v1" || ss)[0..1]                       1 B
 ```
 
-Sender and recipient MUST both run exactly this procedure. An implementation MUST stop after
-`counter = 255` and treat exhaustion as a failure, and it MUST NOT reduce a candidate mod `n`. A
-candidate is invalid with probability below 2^-127, so no `ss` anyone can find takes the
-`counter >= 1` branch. Test vectors reach that branch by supplying `base` directly (Test Cases).
+Sender and recipient MUST both run exactly this procedure. An implementation MUST NOT reduce
+`base` mod `n` or derive another candidate. On failure, the sender discards the announcement's
+randomness and draws again (Section 2.4), and a scanner skips the announcement (Section 2.7).
+`base` is out of range with probability below 2^-127, so no `ss` anyone can find fails. Test
+vectors reach the failure by supplying `base` directly (Test Cases).
 
 The stealth key pair and its address keep ERC-5564's structure:
 
@@ -125,8 +121,8 @@ These derivations differ from ERC-5564's `schemeId` 1 in four ways. Rationale gi
    the domain separator `"pq-stealth/offset/v1"`.
 3. ERC-5564 takes the view tag from the first byte of the digest that also becomes the scalar.
    Here the view tag is a separate digest under its own domain separator.
-4. ERC-5564 uses the digest as the scalar with no range check. Here the counter-based rejection
-   above yields a valid scalar or fails.
+4. ERC-5564 uses the digest as the scalar with no range check. Here the range check above
+   yields a valid scalar or fails.
 
 #### 1.1 The hybrid combiner
 
@@ -273,7 +269,8 @@ and with it the stealth address, which merges two payments onto one key.
 A sender MUST draw this randomness from a cryptographically secure random number generator.
 For `esk` it draws 32 bytes, and if they are not a valid scalar, discards them and draws again.
 For the encapsulation it calls `ML-KEM.Encaps(ek)`, whose randomness FIPS 203 §3.3 requires to
-come from an approved RBG with a security strength of at least 192 bits for ML-KEM-768.
+come from an approved RBG with a security strength of at least 192 bits for ML-KEM-768. If
+`H(ss)` below fails (Section 1), the sender discards both and draws again.
 
 The sender then computes:
 
@@ -349,6 +346,7 @@ contain leads to a skip, never to an error that stops the scan.
 | `ephemeralPubKey` not 1 121 bytes, or `metadata` empty | skip |
 | `epk` not a valid compressed point | skip |
 | view tag mismatch | skip |
+| `H(ss)` fails its range check (Section 1) | skip |
 | announced `stealthAddress` differs from the derived address | skip |
 | decapsulation "fails" | cannot happen, because ML-KEM rejects implicitly |
 | keygen seed not 128 bytes | error, at key generation |
@@ -437,11 +435,13 @@ independent implementations agree, where ERC-5564's unnamed `h` does not.
   that becomes the scalar, so publishing it gives away 8 bits of that digest. ERC-5564 notes
   the reduction from 128 to 124 bits. Here the tag comes from its own digest and says nothing
   about `H(ss)`.
-- **Rejection instead of no range check.** A digest equal to 0 or at least `n` is not a valid
+- **A range check instead of none.** A digest equal to 0 or at least `n` is not a valid
   scalar. Reducing mod `n` would turn a digest equal to `n` into offset 0, which makes the
   stealth address the address of `spending_pk` itself and links the payment to the registered
-  key in public. Rejection with a counter avoids this and keeps the offset uniform. The bound
-  of 256 candidates guarantees termination, and one byte encodes every counter value.
+  key in public. Failing instead avoids this and keeps the offset uniform. A failure needs no
+  retry rule, because the sender can draw fresh randomness and gets a new `ss`. An earlier
+  draft retried with a counter, which added a loop and a byte encoding to specify and test for
+  a branch that no findable `ss` reaches.
 
 ### Why the view tag comes after the KEM
 
@@ -574,7 +574,7 @@ states, for each row, the requirement it pins and the wrong output it distinguis
 
 | file | rows | what it pins |
 |---|---|---|
-| [`section-1.json`](../vectors/section-1.json) | 7 | Section 1: the offset, its reduction, byte order and the view tag |
+| [`section-1.json`](../vectors/section-1.json) | 6 | Section 1: the offset, its range check, byte order and the view tag |
 | [`section-2.json`](../vectors/section-2.json) | 19 | Section 2: keys and seeds, the meta-address, the combiner and its bindings, the address, the wire mapping, and what counts as a skip |
 
 The generator, [`tools/gen_vectors.py`](../tools/gen_vectors.py), imports nothing from the
@@ -583,9 +583,9 @@ reference implementation. ML-KEM values come from NIST's ACVP files, vendored at
 
 Three conventions apply to the vectors:
 
-- **The reduction's retry branch is tested synthetically.** No findable `ss` produces a `base`
-  that is 0 or at least `n`, so V1-03, V1-04 and V1-06 supply `base` directly and start the
-  procedure of Section 1 from there.
+- **The range check's failure is tested synthetically.** No findable `ss` produces a `base`
+  that is 0 or at least `n`, so V1-03 and V1-04 supply `base` directly. V1-06 is withdrawn: it
+  pinned the counter byte of an earlier draft's retry.
 - **Encapsulation is pinned through `Encaps_internal`.** The vectors fix `m` and use
   `ML-KEM.Encaps_internal(ek, m)`, so they pin `ct` and `ss_pq`. A sender using
   `ML-KEM.Encaps(ek)` produces different, equally valid announcements. Every scanner-side vector
@@ -598,13 +598,11 @@ Two vectors from `section-1.json`:
 ```
 V1-01  ss       = 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
        base     = d8b37e9fb5fd784cc30b719589811092fce202abc0f500d6609a2f69f78b171f
-       counter  = 0
        H(ss)    = d8b37e9fb5fd784cc30b719589811092fce202abc0f500d6609a2f69f78b171f
 V1-07  view_tag = fe                                                  (same ss)
 
 V1-03  base     = 0000000000000000000000000000000000000000000000000000000000000000
-       counter  = 1
-       H(ss)    = 48dcb24327e7cc787755c6ea06c445b1c8d67e0786a0aaaba98a65646f174cc5
+       H(ss)    fails
 ```
 
 ## Reference Implementation

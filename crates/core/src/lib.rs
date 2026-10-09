@@ -38,22 +38,24 @@ pub const VIEW_TAG_BYTES: usize = 1;
 pub enum Error {
     /// Wrong length, tag, or field layout. §1.
     Malformed,
-    /// Scalar reduction hit §1's retry bound with no valid scalar.
+    /// A value that must be a valid secp256k1 scalar is 0 or at least `n`: a keygen seed half
+    /// (§2.1) or §1's offset. Nothing reduces it mod `n`.
     NoValidScalar,
     /// A 32-byte component of the tracking key equals the spending seed. §2.1.
     SpendingKeyDelegated,
     /// Sender counter would wrap. Wrapping reuses a seed, which §2.4 forbids.
     CounterExhausted,
-    /// The operating system's random number generator failed, or returned 64 invalid scalars
-    /// in a row, which a working one does with probability about 2⁻⁸¹⁹². §2.4.
+    /// The operating system's random number generator failed, or gave 64 unusable draws in a
+    /// row, which a working one does with probability below 2⁻⁸⁰⁰⁰. §2.4.
     Rng,
     /// KEM rejected a malformed key or ciphertext. [`StealthScheme::scan`] maps this to [`None`].
     Kem,
     /// This announce seed is unusable; draw the next index. The only error a sender should retry.
     ///
-    /// [`Self::NoValidScalar`] also comes from keygen and from offset reduction. Looping on
-    /// that would retry a permanently broken meta-address. schemeId 3 returns this when the
-    /// first 32 bytes of the announce seed are not a valid secp256k1 scalar (~2⁻¹²⁸ per draw).
+    /// [`Self::NoValidScalar`] also comes from keygen. Looping on that would retry a
+    /// permanently broken key. schemeId 3 returns this when the first 32 bytes of the announce
+    /// seed are not a valid secp256k1 scalar, or when the offset they lead to is out of range
+    /// (§1), each with probability about 2⁻¹²⁸ per draw.
     SeedRejected,
     /// Tracking key does not match the meta-address: recomputed `ek` (and on schemeId 3 the
     /// viewing point) differs from the registry. §1. A bit-flipped `(d, z)` expands to a

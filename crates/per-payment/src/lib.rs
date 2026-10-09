@@ -123,12 +123,12 @@ pub struct Match {
 ///
 /// # Errors
 ///
-/// [`Error::NoValidScalar`] if §1's bounded reduction finds no valid scalar.
+/// [`Error::NoValidScalar`] if §1's offset is not a valid scalar (probability about 2⁻¹²⁸).
 pub fn derive_from_shared_secret(ss: &Bytes32) -> Result<(Bytes32, [u8; VIEW_TAG_BYTES]), Error> {
     Ok((offset_of(ss)?, view_tag_of(ss)))
 }
 
-/// `SHA256(DS_viewtag ‖ ss)[0]`. Does not run offset reduction.
+/// `SHA256(DS_viewtag ‖ ss)[0]`. Does not compute the offset.
 #[must_use]
 pub fn view_tag_of(ss: &Bytes32) -> [u8; VIEW_TAG_BYTES] {
     let tag_digest = Sha256::digest([DS_VIEWTAG, ss.as_slice()].concat());
@@ -138,33 +138,18 @@ pub fn view_tag_of(ss: &Bytes32) -> [u8; VIEW_TAG_BYTES] {
 }
 
 /// §1 offset from `ss`. Separate from [`view_tag_of`] so a scanner can reject on the tag
-/// before doing scalar reduction.
+/// before computing the offset.
 fn offset_of(ss: &Bytes32) -> Result<Bytes32, Error> {
     let base: Bytes32 = Sha256::digest([DS_OFFSET, ss.as_slice()].concat()).into();
-    reduce_to_scalar(&base)
+    check_offset(&base)
 }
 
-/// §1 scalar reduction. Digests are BE. 256 distinct candidates (`counter = 0` is unhashed
-/// `base`; `1..=255` are each one `u8`, so no counter value needs more than a byte).
-///
-/// ```text
-/// for counter in 0..=255:
-///     candidate = base  if counter == 0
-///               = SHA256(DS_offset || base || u8(counter))  otherwise
-///     accept if 0 < candidate < n
-/// ```
-fn reduce_to_scalar(base: &Bytes32) -> Result<Bytes32, Error> {
-    for counter in 0u8..=255 {
-        let candidate: Bytes32 = if counter == 0 {
-            *base
-        } else {
-            Sha256::digest([DS_OFFSET, base.as_slice(), &[counter]].concat()).into()
-        };
-        if pqsa_ec::public_point(&candidate).is_ok() {
-            return Ok(candidate);
-        }
-    }
-    Err(Error::NoValidScalar)
+/// §1 range check. `base`, read big-endian, is the offset if `0 < base < n`. Otherwise it is
+/// [`Error::NoValidScalar`]: nothing is reduced mod `n` and nothing is retried. The sender
+/// draws new randomness and a scanner skips (§2.4, §2.5).
+fn check_offset(base: &Bytes32) -> Result<Bytes32, Error> {
+    pqsa_ec::public_point(base)?;
+    Ok(*base)
 }
 
 /// SHA3-256(DS ‖ ss_ec ‖ ss_pq ‖ epk ‖ ct ‖ viewing_pk_ec ‖ ek). Direct hash, not HKDF. §1.1.
@@ -233,11 +218,13 @@ fn add_points(spending: &CompressedPoint, offset: &Bytes32) -> Option<Compressed
 /// schemeId 3 combiner domain separator. §2.4.
 const DS_HYBRID: &[u8] = b"pq-stealth/hybrid-payment/v1";
 
-/// Ephemeral-scalar draws before [`SchemeId3::announce_random`] gives up. A uniform 32-byte
-/// draw is out of range with probability about 2⁻¹²⁸, so running out means the RNG is broken.
-const RANDOM_SCALAR_DRAWS: usize = 64;
+/// Draws before [`SchemeId3::announce_random`] gives up. A draw is unusable when `esk` or the
+/// offset is out of range, each with probability about 2⁻¹²⁸, so running out means the RNG is
+/// broken.
+const RANDOM_DRAWS: usize = 64;
 
 /// The rest of §2.4 once `esk` is chosen: ECDH, `encapsulate`, the §1.1 combiner, the address.
+/// [`Error::SeedRejected`] if the offset is out of range, so the caller draws again.
 fn finish_announcement(
     meta: &MetaAddress,
     esk: &Bytes32,
@@ -256,7 +243,11 @@ fn finish_announcement(
         &viewing_pk_ec,
         &meta.ek,
     )?;
-    let (offset, view_tag) = derive_from_shared_secret(&ss)?;
+    // An out-of-range offset rejects this announcement's randomness, not the meta-address. §1.
+    let (offset, view_tag) = derive_from_shared_secret(&ss).map_err(|e| match e {
+        Error::NoValidScalar => Error::SeedRejected,
+        other => other,
+    })?;
     let stealth = add_points(&meta.spending, &offset).ok_or(Error::Malformed)?;
     Ok(Announcement {
         epk: Some(epk),
@@ -312,18 +303,20 @@ impl StealthScheme for SchemeId3 {
         ))
     }
 
-    /// §2.4: `esk` from the operating system's CSPRNG, redrawn if it is not a valid scalar,
-    /// and `ML-KEM.Encaps(ek)`.
+    /// §2.4: `esk` from the operating system's CSPRNG and `ML-KEM.Encaps(ek)`, both drawn
+    /// again if `esk` or the offset is out of range.
     fn announce_random(meta: &MetaAddress) -> Result<Announcement, Error> {
         let mut esk: Bytes32 = [0u8; 32];
-        for _ in 0..RANDOM_SCALAR_DRAWS {
+        for _ in 0..RANDOM_DRAWS {
             pqsa_core::os_random(&mut esk)?;
-            match pqsa_ec::public_point(&esk) {
-                Ok(epk) => {
-                    return finish_announcement(meta, &esk, epk, MlKem768::encapsulate_random);
-                }
+            let epk = match pqsa_ec::public_point(&esk) {
+                Ok(epk) => epk,
                 Err(Error::NoValidScalar) => continue,
                 Err(other) => return Err(other),
+            };
+            match finish_announcement(meta, &esk, epk, MlKem768::encapsulate_random) {
+                Err(Error::SeedRejected) => continue,
+                other => return other,
             }
         }
         Err(Error::Rng)
