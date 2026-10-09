@@ -245,9 +245,10 @@ does not imply a valid key.
 
 A recipient MUST register the encoded meta-address with ERC-6538 `registerKeys(3, meta)`.
 
-A recipient MAY register under several `schemeId`s. A scanner MUST use the set of `schemeId`s the
-recipient registered, and MUST NOT process, on that recipient's behalf, an announcement whose
-`schemeId` is outside that set.
+A recipient MAY register under several `schemeId`s. A scanner MUST process each announcement only
+under the rules of the `schemeId` it carries, with the recipient's keys for that `schemeId`. A
+recipient who clears a `schemeId` (below) SHOULD keep scanning it for payments made before the
+change.
 
 A sender that implements `schemeId` 3 and finds the recipient registered under it MUST use
 `schemeId` 3, even if the recipient is also registered under another scheme such as `schemeId` 1.
@@ -342,7 +343,7 @@ contain leads to a skip, never to an error that stops the scan.
 
 | condition | behaviour |
 |---|---|
-| `schemeId` not registered by the recipient | skip |
+| `schemeId` other than 3 | not processed under this scheme's rules (Section 2.3) |
 | `ephemeralPubKey` not 1 121 bytes, or `metadata` empty | skip |
 | `epk` not a valid compressed point | skip |
 | view tag mismatch | skip |
@@ -702,6 +703,12 @@ A recipient registered under both `schemeId` 1 and `schemeId` 3 can be paid unde
 any sender, and that payment has no post-quantum announcement privacy. SP 800-227 §4.6.3 warns
 about this class of downgrade. Section 2.3 is the mitigation: senders that implement `schemeId`
 3 must prefer it, and recipients who need the protection should register only `schemeId` 3.
+
+Scanners still find payments made under `schemeId` 1, including those made before a recipient
+cleared that entry (Section 2.3), so a downgraded payment loses its post-quantum privacy but not
+its funds. A wallet can show which
+payments were announced under `schemeId` 1, since those are the ones a future quantum adversary
+can link to the recipient.
 
 ### Scanner cost and denial of service
 
