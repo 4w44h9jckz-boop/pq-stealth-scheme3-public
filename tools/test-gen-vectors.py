@@ -63,47 +63,36 @@ HDR = "| id | claim | given | expect | wrong |\n|---|---|---|---|---|\n"
 
 
 def pin_section_1() -> None:
-    """§1 against `vectors/section-1.json`, including retry *outputs*, not just `counter >= 1`."""
+    """§1 against `vectors/section-1.json`, including the range check's failures."""
     v1 = json.loads((ROOT / "vectors/section-1.json").read_text(encoding="utf-8"))["vectors"]
 
     v = v1["V1-01"]
-    base, scalar, counter = vp.h_of_ss(bytes.fromhex(v["given"]["ss"]))
+    base, scalar = vp.h_of_ss(bytes.fromhex(v["given"]["ss"]))
     case("V1-01 offset digest", base.hex(), v["expect"]["base"])
-    case("V1-01 counter", counter, v["expect"]["counter"])
     case("V1-01 offset", f"{scalar:064x}", v["expect"]["offset"])
 
     v = v1["V1-02"]
     base = bytes.fromhex(v["given"]["base"])
     case("V1-02 big-endian scalar",
-         f"{int.from_bytes(base, 'big') % vp.N:064x}",
+         f"{vp.offset_scalar(base):064x}",
          v["expect"]["offset_big_endian"])
     case("V1-02 is not little-endian",
          f"{int.from_bytes(base, 'little') % vp.N:064x}" ==
          v["expect"]["offset_big_endian"], False)
 
-    v = v1["V1-03"]
-    scalar, counter = vp.reduce_to_scalar(bytes.fromhex(v["given"]["base"]))
-    case("V1-03 counter", counter, v["expect"]["counter"])
-    case("V1-03 offset", f"{scalar:064x}", v["expect"]["offset"])
-
-    v = v1["V1-04"]
-    scalar, counter = vp.reduce_to_scalar(bytes.fromhex(v["given"]["base"]))
-    case("V1-04 counter", counter, v["expect"]["counter"])
-    case("V1-04 offset", f"{scalar:064x}", v["expect"]["offset"])
+    for rid in ("V1-03", "V1-04"):
+        v = v1[rid]
+        try:
+            vp.offset_scalar(bytes.fromhex(v["given"]["base"]))
+            outcome = "accepted"
+        except ValueError:
+            outcome = "fail"
+        case(f"{rid} outcome", outcome, v["expect"]["outcome"])
 
     v = v1["V1-05"]
-    scalar, counter = vp.reduce_to_scalar(bytes.fromhex(v["given"]["base"]))
-    case("V1-05 counter", counter, v["expect"]["counter"])
+    scalar = vp.offset_scalar(bytes.fromhex(v["given"]["base"]))
     case("V1-05 offset", f"{scalar:064x}", v["expect"]["offset"])
-
-    v = v1["V1-06"]
-    digest = hashlib.sha256(
-        vp.DS_OFFSET + bytes.fromhex(v["given"]["base"]) + bytes([1])
-    ).digest()
-    case("V1-06 single-byte counter", digest.hex(), v["expect"]["digest"])
-    case("V1-06 is not u32be", digest.hex() == v["wrong"]["u32be"], False)
-    case("V1-06 is not u64be", digest.hex() == v["wrong"]["u64be"], False)
-    case("V1-06 is not ascii", digest.hex() == v["wrong"]["ascii"], False)
+    case("V1-06 is withdrawn", "V1-06" in v1, False)
 
     v = v1["V1-07"]
     tag = vp.view_tag(bytes.fromhex(v["given"]["ss"]))
@@ -160,14 +149,14 @@ def main() -> int:
     pin_section_1()
 
     print("\nthe row list comes from the plan, not from the generator")
-    rc, out = run(tree(plan_of(**{"1": ["V1-01"], "2_9": []})))
+    rc, out = run(tree(plan_of(**{"1": ["V1-01"], "2": []})))
     case("a plan naming one §1 row emits one", "Section1: 1/1 slot(s)" in out, True)
-    rc, out = run(tree(plan_of(**{"1": ["V1-01", "V1-01"], "2_9": []})))
+    rc, out = run(tree(plan_of(**{"1": ["V1-01", "V1-01"], "2": []})))
     case("a plan listing the same id twice exits 1", rc, 1)
     case("and names the id and the count",
          "Section1 V1-01 (2 times)" in out and "more than once" in out, True)
     # A row the plan lists and the builder does not build must FAIL, not be skipped.
-    rc, out = run(tree(plan_of(**{"1": ["V1-01", "V1-99"], "2_9": []})))
+    rc, out = run(tree(plan_of(**{"1": ["V1-01", "V1-99"], "2": []})))
     case("a plan row the generator cannot build exits 1", rc, 1)
     case("and it is named", "Section1 V1-99" in out, True)
     case("and the message says silence is the worse outcome",
@@ -175,18 +164,18 @@ def main() -> int:
 
     print("\nthe supported group set is fail-closed")
     import gen_vectors as gv  # noqa: E402  -- always present; it is the tool under test
-    case("the generator supports exactly the shipped sections", gv.GROUPS, ("1", "2.9"))
+    case("the generator supports exactly the shipped sections", gv.GROUPS, ("1", "2"))
     rc, out = run(tree(plan_of(**{"1": ["V1-01"]})))
     case("a missing supported section exits 1", rc, 1)
-    case("and names the missing section", "missing supported section(s): Section2.9" in out, True)
-    rc, out = run(tree(plan_of(**{"1": ["V1-01"], "2_9": [], "2": []})))
+    case("and names the missing section", "missing supported section(s): Section2" in out, True)
+    rc, out = run(tree(plan_of(**{"1": ["V1-01"], "2": [], "9": []})))
     case("an unsupported section exits 1", rc, 1)
-    case("and names the unsupported section", "unsupported section(s): Section2" in out, True)
+    case("and names the unsupported section", "unsupported section(s): Section9" in out, True)
 
     print("\na withdrawn or reserved plan row is neither emitted nor missing")
     # Group §1 is rendered LAST so the appended rows belong to it -- plan_of emits groups
     # in keyword order and a row line joins the group above it.
-    plan = plan_of(**{"2_9": [], "1": ["V1-01"]})
+    plan = plan_of(**{"2": [], "1": ["V1-01"]})
     plan += "| V1-90 | ~~a struck-through claim~~ | — | — | **WITHDRAWN.** |\n"
     plan += "| V1-91 | **no vector — deliberately.** a reserved slot | — | — | a vector |\n"
     root = tree(plan)
@@ -201,7 +190,7 @@ def main() -> int:
     # The rule is claim-cell-scoped and case-sensitive: a LIVE row whose failure column
     # mentions "the withdrawn rule" must still be built -- the false positive that scoping
     # exists to prevent. V1-92 is live, unbuilt, and must therefore FAIL the run as missing.
-    plan = plan_of(**{"2_9": [], "1": ["V1-01"]})
+    plan = plan_of(**{"2": [], "1": ["V1-01"]})
     plan += "| V1-92 | a live claim | g | e | the withdrawn rule does not apply |\n"
     rc, out = run(tree(plan))
     case("a live row mentioning 'withdrawn' in its failure column is NOT skipped",
@@ -211,10 +200,10 @@ def main() -> int:
     # This case is INVERTED from what it asserted while the generator ran one wave at a time.
     # A partial run had to carry the rest of the committed manifest over; a total run must
     # not, because the only thing a carried entry can be is a file that stopped shipping.
-    # That is not hypothetical: `section-2.json` and `section-5.json` outlived both files in
-    # the committed manifest, and `--check` passed, because it verifies files that are
-    # present rather than names that are listed.
-    root = tree(plan_of(**{"1": ["V1-01"], "2_9": []}))
+    # That is not hypothetical: entries for two files from an earlier layout outlived both
+    # files in the committed manifest, and `--check` passed, because it verifies files that
+    # are present rather than names that are listed.
+    root = tree(plan_of(**{"1": ["V1-01"], "2": []}))
     foreign = {"_what": "x", "tier1_source": [],
                "files": {"section-99.json": {"sha256": "f" * 64, "rows_in_plan": 1,
                                              "rows_present": 1}}}
@@ -227,17 +216,17 @@ def main() -> int:
     case("and the files are ordered by name", list(man["files"]), sorted(man["files"]))
 
     print("\nthe vendored NIST file is required, never substituted")
-    rc, out = run(tree(plan_of(**{"1": ["V1-01"], "2_9": []}), tier1=None))
+    rc, out = run(tree(plan_of(**{"1": ["V1-01"], "2": []}), tier1=None))
     case("a missing tier-1 file exits 2", rc, 2)
     case("and says tier 1 is NIST's", "does not compute it" in out, True)
 
     print("\nevery KEM value traces to the vendored file")
-    root = tree(plan_of(**{"1": [], "2_9": ["V3-06a", "V3-08"]}))
+    root = tree(plan_of(**{"1": [], "2": ["V3-06a", "V3-08"]}))
     run(root)
     acvp = json.loads((root / "vectors/tier1/ml-kem-768-acvp.json").read_text())
     known = {x["ek"] for x in acvp["keygen"]}
     known |= {x[k] for x in acvp["encapsulation"] for k in ("ek", "m", "c", "k")}
-    body = json.loads((root / "vectors/section-2_9.json").read_text())["vectors"]
+    body = json.loads((root / "vectors/section-2.json").read_text())["vectors"]
     # Any 1088- or 1184-byte hex string in the output must be one NIST published. A
     # synthesised ciphertext is the one artifact this generator must never produce.
     def long_hex(o):
@@ -255,7 +244,7 @@ def main() -> int:
          [f for f in found if f not in known], [])
 
     print("\n--check rejects edited, missing-row and absent-file states")
-    root = tree(plan_of(**{"1": ["V1-01"], "2_9": []}))
+    root = tree(plan_of(**{"1": ["V1-01"], "2": []}))
     run(root)
     rc, out = run(root, "--check")
     case("--check on a freshly generated tree passes", rc, 0)
@@ -287,7 +276,7 @@ def main() -> int:
     case("an absent file exits 1", rc, 1)
     case("and says absent, not differs", "section-1.json: absent" in out, True)
 
-    root = tree(plan_of(**{"1": ["V1-01"], "2_9": []}))
+    root = tree(plan_of(**{"1": ["V1-01"], "2": []}))
     run(root)
     f = root / "vectors/section-1.json"
     body = json.loads(f.read_text())
@@ -316,9 +305,9 @@ def main() -> int:
 
     print("\nusage")
     case("an unknown flag exits 2",
-         run(tree(plan_of(**{"1": [], "2_9": []})), "--bogus")[0], 2)
+         run(tree(plan_of(**{"1": [], "2": []})), "--bogus")[0], 2)
     case("the withdrawn --wave flag is now just an unknown flag",
-         run(tree(plan_of(**{"1": [], "2_9": []})), "--wave", "1")[0], 2)
+         run(tree(plan_of(**{"1": [], "2": []})), "--wave", "1")[0], 2)
     with tempfile.TemporaryDirectory() as t:
         case("a tree with no plan exits 2",
              subprocess.run([sys.executable, str(TOOL), t],

@@ -16,12 +16,13 @@
   },
   "files": {
     "section-1.json": {
-      "sha256": "d1bbf7f1e9856fafae798f3462a7b8373a4ff8fd8a2f8e10c6a56b3d10d44e6c",
+      "sha256": "8bde9a3edb495e760e41feaee9aaeae5b8906a8821d737338313501af075ec71",
       "rows_in_plan": 7,
-      "rows_present": 7
+      "rows_present": 6,
+      "rows_withdrawn_or_reserved": 1
     },
-    "section-2_9.json": {
-      "sha256": "ef385bfc7c25dda7bd10891dddfe3f215df538d6b608910164ef7d72b4aeb1f4",
+    "section-2.json": {
+      "sha256": "f4c6ff59e33367722ab1df9c15988fe2a5e825baba6d3117ab02ea2bcadb616b",
       "rows_in_plan": 19,
       "rows_present": 19
     }

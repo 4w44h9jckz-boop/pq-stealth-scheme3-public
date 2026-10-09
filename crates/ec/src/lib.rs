@@ -94,7 +94,7 @@ pub fn ecdh(scalar: &Bytes32, point: &CompressedPoint) -> Result<Bytes32, Error>
     Ok(x)
 }
 
-/// `scalar + offset` mod n. §2.3.
+/// `scalar + offset` mod n. §1.
 ///
 /// # Errors
 ///
@@ -109,7 +109,7 @@ pub fn add_scalars(scalar: &Bytes32, offset: &Bytes32) -> Result<Bytes32, Error>
     Ok(sum.to_bytes().into())
 }
 
-/// Point addition. Sender/scanner side of §2.3: `spending_pk + offset·G`.
+/// Point addition. Sender/scanner side of §1: `spending_pk + offset·G`.
 ///
 /// # Errors
 ///

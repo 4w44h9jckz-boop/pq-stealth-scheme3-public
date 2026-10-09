@@ -21,6 +21,16 @@ BYTECODE = Path(__file__).resolve().parent / "announcement" / "deployed_bytecode
 ANNOUNCE_SIG = "announce(uint256,address,bytes,bytes)"
 EVENT_SIG = "Announcement(uint256,address,address,bytes,bytes)"
 
+# ERC-5564's recommended metadata for a native-token transfer, after the view tag: the
+# selector `0xeeeeeeee`, the address `0xEeee...EEeE`, then the amount as 32 big-endian bytes.
+NATIVE_TOKEN_SELECTOR = bytes.fromhex("eeeeeeee")
+NATIVE_TOKEN_ADDRESS = bytes.fromhex("ee" * 20)
+
+
+def native_token_metadata(amount: int) -> bytes:
+    """The 56 bytes ERC-5564 recommends after the view tag for a native-token transfer."""
+    return NATIVE_TOKEN_SELECTOR + NATIVE_TOKEN_ADDRESS + amount.to_bytes(32, "big")
+
 
 def install_announcer(url: str) -> None:
     """Install and read back the canonical announcer runtime."""

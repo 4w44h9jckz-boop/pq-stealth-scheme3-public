@@ -28,7 +28,7 @@ REGISTRY_SHA256 = "aacd1016938b107361de63f20c358350de9f78fa6033b7727853f0229c94b
 # Files this tool reads for quoted gas numbers.
 # `docs/*.md` and `AUDIT.md` are unused in this tree; keep the globs so they
 # are covered if those paths come back.
-GAS_DOCS = ("docs/*.md", "AUDIT.md", "spec/ERC-*.md", "README.md",
+GAS_DOCS = ("docs/*.md", "AUDIT.md", "spec/*.md", "README.md",
             "harness/*/README.md")
 GAS_DOCS_ALL = GAS_DOCS
 
@@ -170,7 +170,8 @@ def _gas_used_values(value: object) -> set[int]:
 
 def _byte_values(value: object) -> set[int]:
     """Collect wire-size leaves that are not gas claims."""
-    keys = {"calldata_bytes", "epk_bytes", "metadata_bytes", "meta_address_bytes"}
+    keys = {"calldata_bytes", "ephemeral_pub_key_bytes", "metadata_bytes",
+            "meta_address_bytes"}
     found: set[int] = set()
     if isinstance(value, dict):
         for key, child in value.items():

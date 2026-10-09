@@ -6,18 +6,16 @@
 //! **THE SEED DERIVATION IN THIS MODULE IS NOT SPECIFIED BY THE ERC**, and every item below
 //! that derives a seed from a master key -- [`keygen_seed`], [`SenderState`], `announce_seed`,
 //! `kem_id`, and their three domain separators -- is this implementation's choice rather than
-//! a normative requirement. What the ERC does state is the seed's SHAPE and its FRESHNESS: the
-//! keygen seed is 128 bytes (§2.1) and the announce seed is 64 (§2.4), and a fresh announce
-//! seed MUST be drawn per announcement. §2.4 says explicitly that the method is a wallet
-//! concern. A wallet drawing 64 random bytes per announcement conforms; so does this.
+//! a normative requirement. What the ERC states is the keygen seed's SHAPE and the
+//! REQUIREMENTS its derivation must meet (§2.1), and that each announcement's randomness is
+//! drawn from a CSPRNG (§2.4).
 //!
-//! It is here because the demonstration and the payment harness need SOME reproducible source
-//! of seeds -- a receipt is only falsifiable if a reader can reproduce its input -- and because
-//! an index that advances is what makes reuse hard to do by accident.
-//!
-//! [`SenderState`] derives announce seeds and increments an index. Reusing a seed repeats
-//! the KEM ciphertext and the stealth address. [`StealthScheme::announce`] still takes raw
-//! `&[u8]`; using [`SenderState`] is convention, not enforced.
+//! The sender §2.4 describes is [`StealthScheme::announce_random`], which draws from the
+//! operating system through [`os_random`]. [`SenderState`] is NOT that sender: it is a
+//! deterministic generator, here because the vectors, the demonstration and the payment
+//! harness need a reproducible source of announce seeds -- a receipt is only falsifiable if a
+//! reader can reproduce its input. Reusing one of its seeds repeats the KEM ciphertext and the
+//! stealth address.
 
 use sha3::Shake256;
 use sha3::digest::{ExtendableOutput, Update, XofReader};
@@ -40,19 +38,24 @@ pub const VIEW_TAG_BYTES: usize = 1;
 pub enum Error {
     /// Wrong length, tag, or field layout. §1.
     Malformed,
-    /// Scalar reduction hit §1's retry bound with no valid scalar.
+    /// A value that must be a valid secp256k1 scalar is 0 or at least `n`: a keygen seed half
+    /// (§2.1) or §1's offset. Nothing reduces it mod `n`.
     NoValidScalar,
-    /// A 32-byte window of the delegated object equals the spending seed. §2.1.
+    /// A 32-byte component of the tracking key equals the spending seed. §2.1.
     SpendingKeyDelegated,
     /// Sender counter would wrap. Wrapping reuses a seed, which §2.4 forbids.
     CounterExhausted,
+    /// The operating system's random number generator failed, or gave 64 unusable draws in a
+    /// row, which a working one does with probability below 2⁻⁸⁰⁰⁰. §2.4.
+    Rng,
     /// KEM rejected a malformed key or ciphertext. [`StealthScheme::scan`] maps this to [`None`].
     Kem,
     /// This announce seed is unusable; draw the next index. The only error a sender should retry.
     ///
-    /// [`Self::NoValidScalar`] also comes from keygen and from offset reduction. Looping on
-    /// that would retry a permanently broken meta-address. schemeId 3 returns this when the
-    /// first 32 bytes of the announce seed are not a valid secp256k1 scalar (~2⁻¹²⁸ per draw).
+    /// [`Self::NoValidScalar`] also comes from keygen. Looping on that would retry a
+    /// permanently broken key. schemeId 3 returns this when the first 32 bytes of the announce
+    /// seed are not a valid secp256k1 scalar, or when the offset they lead to is out of range
+    /// (§1), each with probability about 2⁻¹²⁸ per draw.
     SeedRejected,
     /// Tracking key does not match the meta-address: recomputed `ek` (and on schemeId 3 the
     /// viewing point) differs from the registry. §1. A bit-flipped `(d, z)` expands to a
@@ -75,8 +78,8 @@ pub type Keys<S> = (
 
 /// One stealth-address scheme. Vocabulary §1; wire §3, registry §2.2.
 ///
-/// Associated types vary by scheme. Keygen is deterministic in its seed; nothing here draws
-/// randomness. The `SCHEME_ID` values in this tree are proposals, not reserved with ERC-5564.
+/// Associated types vary by scheme. Keygen is deterministic in its seed. Only
+/// [`Self::announce_random`] draws randomness. The `SCHEME_ID` values in this tree are proposals, not reserved with ERC-5564.
 pub trait StealthScheme {
     /// ERC-5564 `schemeId` this scheme claims. Not reserved.
     const SCHEME_ID: u64;
@@ -95,7 +98,8 @@ pub trait StealthScheme {
     type Meta;
     /// Recipient spending secret. Never delegated.
     type Master;
-    /// May be handed to a scanning service. §2.1. A delegated scanner sees the whole payment graph (§9).
+    /// May be handed to a scanning service. §2.1. A delegated scanner sees the whole payment
+    /// graph (Security Considerations).
     type Tracking;
     /// Published via ERC-5564 `announce()`.
     type Announcement;
@@ -117,10 +121,22 @@ pub trait StealthScheme {
     where
         Self: Sized;
 
-    /// Announce a payment to `meta` using `seed`.
+    /// Announce a payment to `meta` with randomness from the operating system's CSPRNG. §2.4.
     ///
-    /// `seed` should come from [`SenderState::draw_seed`]. This method does not enforce
-    /// that: the same seed twice yields the same announcement and stealth address.
+    /// This is the sender for real payments. An ephemeral scalar that is not valid is
+    /// discarded and drawn again.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::Malformed`] on a meta-address this scheme does not accept, [`Error::Kem`] on
+    /// encapsulation failure, [`Error::Rng`] if the operating system's RNG fails.
+    fn announce_random(meta: &Self::Meta) -> Result<Self::Announcement, Error>;
+
+    /// Announce a payment to `meta` with the randomness fixed by `seed`. Deterministic.
+    ///
+    /// For test vectors and reproducible fixtures, with `seed` from [`SenderState::draw_seed`].
+    /// Real payments use [`Self::announce_random`]: §2.4 requires CSPRNG randomness, and the
+    /// same seed twice yields the same announcement and stealth address.
     ///
     /// # Errors
     ///
@@ -184,7 +200,7 @@ pub trait StealthScheme {
     /// stand in for "missing"; a parser that filled zeros would make §2.5 reject every payment.
     fn announcement_from_bytes(
         stealth_address: &[u8; 20],
-        epk: &[u8],
+        ephemeral_pub_key: &[u8],
         metadata: &[u8],
     ) -> Option<Self::Announcement>;
 }
@@ -200,7 +216,8 @@ pub trait ExportableSpendKey: StealthScheme {
 const DS_KEYGEN: &[u8] = b"pq-stealth/keygen/v1";
 
 /// Keygen-seed derivation from a 32-byte master. NOT SPECIFIED BY THE ERC; §2.1 states only
-/// that the seed it produces is 128 bytes.
+/// that the seed is 128 bytes and that its components are independent, which disjoint parts
+/// of one HKDF output are.
 ///
 /// ```text
 /// HKDF-SHA256(
@@ -240,8 +257,10 @@ pub fn keygen_seed(
     Ok(out)
 }
 
-/// Per-sender announce-seed state: master and next unused index. Not from the ERC, which
-/// requires only that a fresh seed reaches every announcement (§2.4).
+/// Deterministic announce-seed generator: master and next unused index. Not from the ERC,
+/// and not the sender §2.4 describes, which draws from a CSPRNG
+/// ([`StealthScheme::announce_random`]). It makes the vectors and the gas harness's fixture
+/// reproducible.
 ///
 /// Persist both. Losing the counter and continuing reuses an index, which repeats a stealth
 /// address. [`StealthScheme::announce`] still accepts any `&[u8]`. Two `SenderState` values
@@ -352,23 +371,36 @@ impl SenderState {
     }
 }
 
-/// Reject a keygen seed that would put the spending scalar in the delegated object. §2.1.
-///
-/// Scan every 32-byte window of the **concatenated** delegated bytes, including windows that
-/// straddle field boundaries. A per-field scan of schemeId 3's `viewing_ec ‖ dk` (96 B)
-/// covers 34 positions; the full scan covers 65. The caller concatenates in wire order.
+/// Fill `dest` from the operating system's CSPRNG. §2.4.
 ///
 /// # Errors
 ///
-/// [`Error::SpendingKeyDelegated`] if any window equals `spending_seed`.
+/// [`Error::Rng`] if the operating system's RNG fails.
+pub fn os_random(dest: &mut [u8]) -> Result<(), Error> {
+    getrandom::fill(dest).map_err(|_| Error::Rng)
+}
+
+/// Reject a keygen seed that would put the spending scalar in the delegated object. §2.1.
+///
+/// Compares `spending_seed` with each 32-byte **component** of the delegated bytes, which the
+/// caller concatenates in wire order: `viewing_ec_seed ‖ d ‖ z` on schemeId 3. That catches
+/// the realistic mistake -- one 32-byte secret copied into several slots, as ERC-5564's
+/// single-key meta-address invites. It does not catch a derived relation such as
+/// `viewing_ec_seed = H(spending_seed)`; §2.1's independence requirement covers that, and no
+/// check on the seed bytes can.
+///
+/// # Errors
+///
+/// [`Error::SpendingKeyDelegated`] if any component equals `spending_seed`.
 pub fn reject_if_spending_key_is_delegated(
     spending_seed: &Bytes32,
     delegated: &[u8],
 ) -> Result<(), Error> {
-    for window in delegated.windows(32) {
-        if window == spending_seed.as_slice() {
-            return Err(Error::SpendingKeyDelegated);
-        }
+    if delegated
+        .chunks(32)
+        .any(|component| component == spending_seed.as_slice())
+    {
+        return Err(Error::SpendingKeyDelegated);
     }
     Ok(())
 }
@@ -414,20 +446,14 @@ fn kem_id(name: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Number of 32-byte windows in `len` bytes: `len - 31`, or 0 if `len < 32`.
-#[must_use]
-pub const fn delegation_window_count(len: usize) -> usize {
-    if len < 32 { 0 } else { len - 31 }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Stand-in so the derivation can be tested without a scheme crate. `NAME` is bound in.
     ///
-    /// **`keygen_seed` / `announce_seed` are not in the ERC.** §2.4 leaves seed production to
-    /// the wallet. The golden bytes below are regression pins for this crate's KDF (used by
+    /// **`keygen_seed` / `announce_seed` are not in the ERC.** §2.1 and §2.4 state requirements
+    /// for seed production, not a construction. The golden bytes below are regression pins for this crate's KDF (used by
     /// the harness), not rows from `vectors/`.
     struct SeedFixture;
 
@@ -488,25 +514,11 @@ mod tests {
         );
     }
 
-    /// Window count is `len - 31` (65 for 96 B, not 34).
+    /// Guard compares whole components: offsets 0, 32 and 64 of the 96-byte object.
     #[test]
-    fn delegation_window_counts() {
-        assert_eq!(delegation_window_count(64), 33);
-        assert_eq!(delegation_window_count(96), 65);
-        assert_eq!(delegation_window_count(32), 1);
-        assert_eq!(
-            delegation_window_count(31),
-            0,
-            "no window fits, and must not underflow"
-        );
-        assert_eq!(delegation_window_count(0), 0);
-    }
-
-    /// Guard catches windows that straddle the 32-byte field boundary (e.g. offset 17).
-    #[test]
-    fn the_guard_catches_a_straddling_offset() {
+    fn the_guard_compares_each_component() {
         let spending: Bytes32 = [0x11; 32];
-        for offset in [0usize, 1, 16, 17, 31, 32, 63, 64] {
+        for offset in [0usize, 32, 64] {
             let mut delegated = vec![0x44u8; 96];
             delegated[offset..offset + 32].copy_from_slice(&spending);
             assert!(
@@ -514,11 +526,21 @@ mod tests {
                     reject_if_spending_key_is_delegated(&spending, &delegated),
                     Err(Error::SpendingKeyDelegated)
                 ),
-                "offset {offset} must be rejected; a per-field scan misses 17 through 31"
+                "component at offset {offset} must be rejected"
             );
         }
         let clean = vec![0x44u8; 96];
         assert!(reject_if_spending_key_is_delegated(&spending, &clean).is_ok());
+    }
+
+    /// A straddling window is not a component, so it is not the guard's business. §2.1
+    /// requires independent seeds, and a seed that straddles is already not independent.
+    #[test]
+    fn the_guard_ignores_a_straddling_window() {
+        let spending: Bytes32 = [0x11; 32];
+        let mut delegated = vec![0x44u8; 96];
+        delegated[17..49].copy_from_slice(&spending);
+        assert!(reject_if_spending_key_is_delegated(&spending, &delegated).is_ok());
     }
 
     /// `resume` takes the next unused index; drawing consumes it.
@@ -586,6 +608,9 @@ mod tests {
             type Scanner = ();
             type SpendKey = Bytes32;
             fn keygen(_: &[u8]) -> Result<Keys<Self>, Error> {
+                Err(Error::Malformed)
+            }
+            fn announce_random(_: &()) -> Result<(), Error> {
                 Err(Error::Malformed)
             }
             fn announce(_: &(), _: &[u8]) -> Result<(), Error> {
