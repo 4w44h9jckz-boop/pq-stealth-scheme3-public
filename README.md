@@ -29,7 +29,6 @@ The specification is [ERC-8441](https://github.com/ethereum/ERCs/pull/2059), in 
 | path | what it is |
 |---|---|
 | `spec/ERC-8441-schemeid3.md` | the specification, ERC-8441 |
-| `spec/ethereum-magicians-post.md` | the opening post of the Ethereum Magicians discussion thread |
 | `crates/core` | the `StealthScheme` trait |
 | `crates/ec` | secp256k1: SEC1 decoding, ECDH, scalar and point addition, the address |
 | `crates/kem` | ML-KEM-768, over `ml-kem`, checked against NIST's own ACVP cases |
@@ -60,30 +59,6 @@ The fixtures are generated from `tools/vecprim.py`,
 which is **independent** from the reference implementation that they test. 
 spec_vector.rs (implementing the test vectors) in per_payment matches the two implementation outputs for additional correctness check.
 For ML-KEM: the ciphertexts are of **NIST's own ACVP file**, vendored at `vectors/tier1/`.
-
-## Submitting to the ERCs repository
-
-The specification here links this repository's files, which do not exist in
-[ethereum/ERCs](https://github.com/ethereum/ERCs). `tools/erc_submission.py` writes the copy that
-goes there, `ERCS/erc-8441.md` and `assets/erc-8441/`, with other proposals linked as
-`./eip-N.md`, the copyright line linking `../LICENSE.md`, and the vectors and their generator as
-assets. It fails if any link would not resolve there, and runs `gen_vectors.py --check` on the
-copied assets. The number and the
-[Ethereum Magicians thread](https://ethereum-magicians.org/t/erc-8441-hybrid-post-quantum-stealth-address-scheme/29923)
-come from the specification's preamble. `--out` is a clone of your fork of ethereum/ERCs:
-
-```bash
-python3 tools/erc_submission.py --out path/to/ERCs
-```
-
-Commit the result and push it to the branch behind [the pull request](https://github.com/ethereum/ERCs/pull/2059).
-
-The pull request was opened before the number was assigned, as `ERCS/erc-0.md` with `eip: 0` and
-`assets/erc-0/`. The template's `eip-draft_<title>.md` with no `eip` header fails the ERCs
-linter, which reads the number from the file name and requires the header to match it. If those
-files are still in `--out`, the script prints the `git rm` line that removes them. The ERCs
-pull request also adds `nam` to `config/.codespell-whitelist`, since codespell otherwise reads the
-first author's name as a misspelling of "Name".
 
 ## Kohaku Integration PoC
 
