@@ -1,23 +1,19 @@
 #!/usr/bin/env python3
 """Build the copy of the specification that goes to the ERCs repository.
 
-    erc_submission.py (--draft | --number N) --out DIR [--discussions-to URL]
-                      [--created YYYY-MM-DD] [root]
+    erc_submission.py --out DIR [--discussions-to URL] [--created YYYY-MM-DD] [root]
 
-Writes the specification and its assets laid out as in a checkout of github.com/ethereum/ERCs,
-so DIR can be one. Exit 0 on success, 1 if the result would not stand in that repository, 2 on a
-usage error.
+Writes `ERCS/erc-N.md` and `assets/erc-N/` laid out as in a checkout of github.com/ethereum/ERCs,
+so DIR can be one, where N is the specification's `eip` header. Exit 0 on success, 1 if the
+result would not stand in that repository, 2 on a usage error.
 
-TWO STAGES. The editors assign the number after the pull request is opened.
-`--draft` writes the first submission as number 0: `ERCS/erc-0.md` with `eip: 0`, and its assets
-under `assets/erc-0/`. Not the template's `eip-draft_<title>.md` with no `eip` header: the ERCs
-linter workflow (eipw-action) reads the proposal number from the file name and aborts on any
-name whose part after the first `-` is not a number, and eipw itself requires the header and
-its match with the file name. Number 0 claims no real number and passes both.
-`--number N` then writes `ERCS/erc-N.md` and `assets/erc-N/`, and names the draft files to
-remove if DIR still has them.
+THE DRAFT FILES. The ERCs pull request was opened before the editors assigned a number, as
+`ERCS/erc-0.md` with `eip: 0` and its assets under `assets/erc-0/`. The template's
+`eip-draft_<title>.md` with no `eip` header does not pass there: the ERCs linter workflow
+(eipw-action) reads the proposal number from the file name, and eipw requires the header and its
+match with the file name. If DIR still has the `erc-0` files, this names them to remove.
 
-WHY A BUILD STEP. `spec/ERC-VVVV-schemeid3.md` links files of this repository, other proposals
+WHY A BUILD STEP. `spec/ERC-8441-schemeid3.md` links files of this repository, other proposals
 on eips.ethereum.org, and this repository's licence. None of those links survives the move:
 EIP-1 wants test data under `assets/erc-N/`, the ERCs linter wants other proposals linked as
 `./eip-N.md`, and the copyright line must link `../LICENSE.md`. Writing the source in that shape
@@ -42,12 +38,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-SPEC = Path("spec/ERC-VVVV-schemeid3.md")
-PLACEHOLDER = "VVVV"
-# The number an unnumbered submission takes in the ERCs repository, and its names there.
-DRAFT_NUMBER = 0
-DRAFT_DOC = f"erc-{DRAFT_NUMBER}.md"
-DRAFT_ASSETS = f"erc-{DRAFT_NUMBER}"
+SPEC = Path("spec/ERC-8441-schemeid3.md")
+# Where the pull request kept the specification before the number was assigned.
+DRAFT_DOC = "ERCS/erc-0.md"
+DRAFT_ASSETS = "assets/erc-0"
 
 # Every file the specification links in this repository, and nothing else. A link to a file
 # not listed here is reported, not copied: an asset is something the editors review.
@@ -82,20 +76,20 @@ def set_header(preamble: list[str], name: str, value: str) -> bool:
     return False
 
 
-def convert(text: str, number: int, discussions_to: str | None,
-            created: str | None) -> tuple[str, list[str]]:
-    """The ERCs-repository text, and what stops it standing there (empty if nothing).
-
-    `number` 0 is the draft."""
+def convert(text: str, discussions_to: str | None,
+            created: str | None) -> tuple[int, str, list[str]]:
+    """The proposal number, the ERCs-repository text, and what stops it standing there (empty
+    if nothing)."""
     problems: list[str] = []
     lines = text.split("\n")
     if lines[0] != "---" or "---" not in lines[1:]:
-        return text, ["no `---` preamble at the top of the specification"]
+        return 0, text, ["no `---` preamble at the top of the specification"]
     end = lines.index("---", 1)
     preamble = lines[1:end]
-    if f"eip: {PLACEHOLDER}" not in preamble:
-        problems.append(f"preamble has no `eip: {PLACEHOLDER}` line to number")
-    set_header(preamble, "eip", str(number))
+    eip = next((ln.split(":", 1)[1].strip() for ln in preamble if ln.startswith("eip:")), "")
+    number = int(eip) if eip.isdigit() else 0
+    if number <= 0:
+        problems.append(f"preamble `eip` is `{eip}`, not a number the editors assigned")
     if discussions_to is not None and not set_header(preamble, "discussions-to", discussions_to):
         problems.append("preamble has no `discussions-to` header")
     if created is not None and not set_header(preamble, "created", created):
@@ -109,8 +103,6 @@ def convert(text: str, number: int, discussions_to: str | None,
         body = body.replace(f"](../{path})", f"]({prefix}{path})")
     out = "\n".join(["---", *preamble, "---"]) + "\n" + body
 
-    if PLACEHOLDER in out:
-        problems.append(f"`{PLACEHOLDER}` is still in the text")
     for target in LINK.findall(body):
         if target.startswith("#") or PROPOSAL_LINK.match(target) or target == LICENSE_THERE:
             continue
@@ -119,16 +111,12 @@ def convert(text: str, number: int, discussions_to: str | None,
         problems.append(f"link `{target}` does not resolve in the ERCs repository")
     if not out.endswith("\n" + COPYRIGHT):
         problems.append("the file does not end with the Copyright section EIP-1 prescribes")
-    return out, problems
+    return number, out, problems
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    stage = ap.add_mutually_exclusive_group(required=True)
-    stage.add_argument("--draft", action="store_true",
-                       help="the first submission, before a number is assigned")
-    stage.add_argument("--number", type=int, help="the number the editors assign")
     ap.add_argument("--out", type=Path, required=True,
                     help="where to write ERCS/ and assets/; an ERCs checkout works")
     ap.add_argument("--discussions-to",
@@ -136,8 +124,6 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--created", help="yyyy-mm-dd; EIP-1 makes it the date of numbering")
     ap.add_argument("root", nargs="?", type=Path, default=Path("."))
     args = ap.parse_args(argv[1:])
-    if args.number is not None and args.number <= 0:
-        ap.error("--number must be a positive integer")
     if args.created is not None and not DATE.match(args.created):
         ap.error("--created must be yyyy-mm-dd")
     root = args.root.resolve()
@@ -145,9 +131,8 @@ def main(argv: list[str]) -> int:
     if missing:
         ap.error(f"not in {root}: {', '.join(missing)}")
 
-    number = DRAFT_NUMBER if args.draft else args.number
     text = (root / SPEC).read_text(encoding="utf-8")
-    out, problems = convert(text, number, args.discussions_to, args.created)
+    number, out, problems = convert(text, args.discussions_to, args.created)
     if problems:
         print("FAIL: the converted specification would not stand in the ERCs repository:",
               file=sys.stderr)
@@ -180,8 +165,7 @@ def main(argv: list[str]) -> int:
     if not MAGICIANS.match(thread):
         print("warning: `discussions-to` is not an Ethereum Magicians thread URL yet, "
               "and the ERCs linter rejects anything else")
-    leftover = [p for p in (f"ERCS/{DRAFT_DOC}", f"assets/{DRAFT_ASSETS}")
-                if not args.draft and (args.out / p).exists()]
+    leftover = [p for p in (DRAFT_DOC, DRAFT_ASSETS) if (args.out / p).exists()]
     if leftover:
         print(f"the draft files are still there; in {args.out} run: git rm -r {' '.join(leftover)}")
     return 0

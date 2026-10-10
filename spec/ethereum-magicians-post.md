@@ -1,22 +1,23 @@
 <!--
-The opening post of the Ethereum Magicians thread for spec/ERC-VVVV-schemeid3.md, posted on
-2026-10-09 in the ERCs category at
-https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923
-The thread is the live copy. Once the editors assign a number, retitle the thread to
-`ERC-N: ...` and add the ERCs pull request to the post. The gas figures below are checked
-against the committed receipts by tools/check_measured.py, so rerun it if you edit them.
+The opening post of the Ethereum Magicians thread for spec/ERC-8441-schemeid3.md, posted on
+2026-10-09 in the ERCs category and retitled once the number was assigned:
+https://ethereum-magicians.org/t/erc-8441-hybrid-post-quantum-stealth-address-scheme/29923
+The thread is the live copy. The Draft line below is what the post should carry now: the ERCs
+pull request, since the specification's path in this repository changed with the number. The
+gas figures below are checked against the committed receipts by tools/check_measured.py, so
+rerun it if you edit them.
 -->
 
 # Title
 
-Hybrid post-quantum stealth addresses (ERC-5564 schemeId 3)
+ERC-8441: Hybrid post-quantum stealth address scheme
 
 # Body
 
 Hi all. We'd like feedback on a draft ERC that adds a post-quantum scheme to ERC-5564 stealth
 addresses.
 
-Draft: https://github.com/namnc/pq-stealth-scheme3-public/blob/main/spec/ERC-VVVV-schemeid3.md
+Draft: https://github.com/ethereum/ERCs/pull/2059
 Reference implementation, test vectors and gas harness: https://github.com/namnc/pq-stealth-scheme3-public/tree/main
 
 ## Summary

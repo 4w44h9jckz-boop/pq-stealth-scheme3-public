@@ -28,10 +28,9 @@ def case(name: str, got, want) -> None:
         FAILED.append(name)
 
 
-def run(root: Path, out: Path, *extra: str, stage: tuple[str, ...] = ("--number", "9999")
-        ) -> tuple[int, str]:
+def run(root: Path, out: Path, *extra: str) -> tuple[int, str]:
     r = subprocess.run(
-        [sys.executable, str(TOOL), *stage, "--out", str(out), *extra, str(root)],
+        [sys.executable, str(TOOL), "--out", str(out), *extra, str(root)],
         capture_output=True, text=True,
     )
     return r.returncode, r.stdout + r.stderr
@@ -50,23 +49,24 @@ def main() -> int:
     print("the committed specification")
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "ercs"
-        rc, log = run(ROOT, out, "--discussions-to", THREAD, "--created", "2026-10-09")
+        source = (ROOT / es.SPEC).read_text(encoding="utf-8")
+        rc, log = run(ROOT, out, "--discussions-to", THREAD, "--created", "2026-10-10")
         case("builds", rc, 0)
-        erc = out / "ERCS/erc-9999.md"
+        erc = out / "ERCS/erc-8441.md"
         text = erc.read_text(encoding="utf-8") if erc.is_file() else ""
         preamble = text.split("\n---\n", 1)[0]
-        case("numbered", "\neip: 9999\n" in preamble, True)
+        case("named and numbered from the specification's `eip` header",
+             (erc.is_file(), "\neip: 8441\n" in preamble), (True, True))
         case("discussions-to set", f"\ndiscussions-to: {THREAD}\n" in preamble, True)
-        case("created set", "\ncreated: 2026-10-09\n" in preamble, True)
-        case("no placeholder left", es.PLACEHOLDER in text, False)
+        case("created set", "\ncreated: 2026-10-10\n" in preamble, True)
         case("no eips.ethereum.org link left", "eips.ethereum.org" in text, False)
         case("proposals linked relatively", "](./eip-5564.md)" in text, True)
         case("ends with EIP-1's copyright line", text.endswith("\n" + es.COPYRIGHT), True)
         targets = es.LINK.findall(text)
-        case("every repository link now points into assets/erc-9999/",
+        case("every repository link now points into assets/erc-8441/",
              [t for t in targets if t.startswith("../") and t != es.LICENSE_THERE
-              and not t.startswith("../assets/erc-9999/")], [])
-        assets = out / "assets/erc-9999"
+              and not t.startswith("../assets/erc-8441/")], [])
+        assets = out / "assets/erc-8441"
         case("every asset is a byte-for-byte copy",
              [p for p in es.ASSETS
               if not (assets / p).is_file()
@@ -75,43 +75,24 @@ def main() -> int:
              sorted(str(p.relative_to(assets)) for p in assets.rglob("*") if p.is_file()),
              sorted(es.ASSETS))
         case("the source is left as it is",
-             f"eip: {es.PLACEHOLDER}" in (ROOT / es.SPEC).read_text(encoding="utf-8"), True)
+             (ROOT / es.SPEC).read_text(encoding="utf-8"), source)
 
         rc, log = run(ROOT, Path(tmp) / "bare")
         case("without --discussions-to it keeps the specification's thread, and does not warn",
              (rc, "warning: `discussions-to`" in log), (0, False))
 
-    print("\nthe draft, before a number is assigned")
+    print("\nthe draft files from before the number was assigned")
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "ercs"
-        rc, log = run(ROOT, out, stage=("--draft",))
-        case("builds", rc, 0)
-        doc = out / "ERCS" / es.DRAFT_DOC
-        text = doc.read_text(encoding="utf-8") if doc.is_file() else ""
-        preamble = text.split("\n---\n", 1)[0].split("\n")
-        case("named erc-0.md, which the ERCs linter workflow can read a number from",
-             doc.is_file(), True)
-        case("numbered 0, matching its file name",
-             [ln for ln in preamble if ln.startswith("eip:")], ["eip: 0"])
-        case("keeps the specification's thread",
-             any(ln.startswith("discussions-to: https://ethereum-magicians.org/t/")
-                 for ln in preamble), True)
-        case("every repository link now points into assets/erc-0/",
-             [t for t in es.LINK.findall(text) if t.startswith("../") and t != es.LICENSE_THERE
-              and not t.startswith("../assets/erc-0/")], [])
-        assets = out / "assets" / es.DRAFT_ASSETS
-        case("every asset is a byte-for-byte copy under assets/erc-0/",
-             [p for p in es.ASSETS
-              if not (assets / p).is_file()
-              or (assets / p).read_bytes() != (ROOT / p).read_bytes()], [])
-        case("nothing numbered is written",
-             sorted(p.name for p in out.glob("*/erc-[1-9]*")), [])
+        (out / es.DRAFT_ASSETS / "vectors").mkdir(parents=True)
+        (out / es.DRAFT_DOC).parent.mkdir(parents=True)
+        (out / es.DRAFT_DOC).write_text("---\neip: 0\n---\n", encoding="utf-8")
         rc, log = run(ROOT, out)
-        case("numbering it afterwards names the draft files to remove",
-             (rc, f"git rm -r ERCS/{es.DRAFT_DOC} assets/{es.DRAFT_ASSETS}" in log), (0, True))
+        case("are named for removal", (rc, f"git rm -r {es.DRAFT_DOC} {es.DRAFT_ASSETS}" in log),
+             (0, True))
+        case("are left in place", (out / es.DRAFT_DOC).is_file(), True)
         rc, log = run(ROOT, Path(tmp) / "fresh")
-        case("numbering a tree with no draft names nothing to remove",
-             (rc, "git rm" in log), (0, False))
+        case("a tree without them names nothing to remove", (rc, "git rm" in log), (0, False))
 
     print("\nwhat it must refuse")
     with tempfile.TemporaryDirectory() as tmp:
@@ -131,9 +112,9 @@ def main() -> int:
         rc, log = run(root, Path(tmp) / "o2")
         case("an external link", (rc, "example.org" in log), (1, True))
 
-        spec.write_text(good.replace("eip: VVVV", "eip: 1234"), encoding="utf-8")
+        spec.write_text(good.replace("eip: 8441", "eip: VVVV"), encoding="utf-8")
         rc, log = run(root, Path(tmp) / "o3")
-        case("a source with no placeholder to number", rc, 1)
+        case("a source with no assigned number", (rc, "`VVVV`" in log), (1, True))
 
         spec.write_text(good + "\nA trailing paragraph.\n", encoding="utf-8")
         rc, log = run(root, Path(tmp) / "o4")
@@ -155,12 +136,10 @@ def main() -> int:
     print("\nusage")
     with tempfile.TemporaryDirectory() as tmp:
         for name, argv in (
-            ("neither --draft nor --number", ["--out", tmp]),
-            ("both --draft and --number", ["--draft", "--number", "9999", "--out", tmp]),
-            ("a non-integer --number", ["--number", "VVVV", "--out", tmp]),
-            ("a zero --number", ["--number", "0", "--out", tmp]),
-            ("a malformed --created", ["--number", "9999", "--out", tmp, "--created", "9/10/26"]),
-            ("a root with no specification", ["--number", "9999", "--out", tmp, tmp]),
+            ("no --out", []),
+            ("the retired --draft", ["--draft", "--out", tmp]),
+            ("a malformed --created", ["--out", tmp, "--created", "10/10/26"]),
+            ("a root with no specification", ["--out", tmp, tmp]),
         ):
             r = subprocess.run([sys.executable, str(TOOL), *argv], capture_output=True,
                                text=True, cwd=ROOT)

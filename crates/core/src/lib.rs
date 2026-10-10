@@ -1,6 +1,6 @@
 //! Shared scheme interface: [`StealthScheme`], errors, seed derivation, the delegation guard.
 //!
-//! Protocol: `spec/ERC-VVVV-schemeid3.md` (§1 vocabulary). This crate does not implement a
+//! Protocol: `spec/ERC-8441-schemeid3.md` (§1 vocabulary). This crate does not implement a
 //! scheme.
 //!
 //! **THE SEED DERIVATION IN THIS MODULE IS NOT SPECIFIED BY THE ERC**, and every item below
