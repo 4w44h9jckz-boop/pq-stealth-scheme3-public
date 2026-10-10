@@ -1,5 +1,5 @@
 {
-  "_what": "ML-KEM-768 cases extracted from NIST ACVP, vendored so the vector generator needs no KEM implementation. ALL TEN of NIST's ML-KEM-768 decapsulation cases are here rather than a sample, so there is no selection to justify -- without them the oracle would cover keyGen and encapsulation only, while `V2-11` and `V2-13` are emitted THROUGH decapsulation, so a KEM with a subtly wrong decapsulation path would pass the advertised acceptance test and the conformance suite could certify wrong scanner behaviour. FIVE OF THE TEN ARE `modified ciphertext`, which is IMPLICIT REJECTION with NIST's own expected secret -- an external witness for the single property this whole ladder is shaped around.",
+  "_what": "ML-KEM-768 cases extracted from NIST ACVP, vendored so the vector generator needs no KEM implementation. ALL TEN of NIST's ML-KEM-768 decapsulation cases are here rather than a sample, so there is no selection to justify -- without them the oracle would cover keyGen and encapsulation only, while `V3-14` takes its `ss_pq` from a decapsulation case, so a KEM with a subtly wrong decapsulation path would pass the advertised acceptance test and the conformance suite could certify wrong scanner behaviour. FIVE OF THE TEN ARE `modified ciphertext`, which is IMPLICIT REJECTION with NIST's own expected secret -- an external witness for the single property this whole ladder is shaped around.",
   "_rule": "Tier 1 is ACVP and we generate nothing. These are INPUTS to the tier-2 generator, never outputs of it.",
   "sources": {
     "ML-KEM-keyGen-FIPS203": {
@@ -131,5 +131,5 @@
       "k": "2d1c76a6aa0d1d47e13e5570debfc78a83eb9a8694c204e6aeaacd55bc23e7be"
     }
   ],
-  "_decapsulation_note": "`dk` here is the EXPANDED 2 400-byte decapsulation key, which is ACVP's representation and NOT the one this specification uses: \u00a71 requires the 64-byte (d, z) seed, and the difference is what makes a delegated tracking key 64 bytes instead of 2 400. So the acceptance check consumes these through an expanded-key entry point that exists for this purpose only -- see `vecprim.kem_decaps_expanded`. Our own derivations never take this path."
+  "_decapsulation_note": "`dk` here is the EXPANDED 2 400-byte decapsulation key, which is ACVP's representation and NOT the one this specification uses: \u00a72.1 makes the tracking key carry the 64-byte (d, z) seed, and the difference is what makes a delegated tracking key 96 bytes instead of 2 432. So the acceptance check consumes these through an expanded-key entry point that exists for this purpose only -- see `vecprim.kem_decaps_expanded`. Our own derivations never take this path."
 }

@@ -96,6 +96,7 @@
     "V3-06": {
       "claim": "IKM is exactly ss_ec || ss_pq || epk || ct || viewing_pk_ec || ek",
       "provisional": true,
+      "provisional_because": "NO OUTSIDE implementation has adopted it. This document's own implementation produces these bytes and an independent blinded re-derivation from the prose alone agreed on them, and neither is an outside party -- the constant is still a proposal",
       "given": {
         "parts": {
           "ss_ec": "9110f8760a37d96052e3dcaf14862a147654f49f722cf213568ccef1eca2ec71",
@@ -232,7 +233,7 @@
         "outcome": "error, error, accepted, error"
       },
       "wrong": {
-        "note": "reducing the seed mod n instead of rejecting it. Nothing in this document reduces mod n: a library that reduces silently turns spending_seed = n into spending_seed = 0, and every payment to the resulting meta-address is spendable by anyone. n - 1 is the positive control -- an off-by-one in the bound rejects a legitimate seed"
+        "note": "reducing the seed mod n instead of rejecting it as Section 2.1 requires: a library that reduces silently turns spending_seed = n into spending_seed = 0, and every payment to the resulting meta-address is spendable by anyone. n - 1 is the positive control -- an off-by-one in the bound rejects a legitimate seed"
       }
     },
     "V3-11": {
@@ -255,7 +256,7 @@
       "claim": "33 bytes of the right length can still be a non-point -- both points MUST be validated before the meta-address is used",
       "given": {
         "viewing_pk_ec_nonpoint": "020000000000000000000000000000000000000000000000000000000000000005",
-        "why": "x = 5 is the smallest x for which x^3 + 7 is not a square mod p, so no y exists and this is 33 well-formed bytes that are not a point",
+        "why": "x = 5 is the smallest positive x for which x^3 + 7 is not a square mod p, so no y exists and this is 33 well-formed bytes that are not a point",
         "viewing_pk_ec_valid": "023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1"
       },
       "expect": {

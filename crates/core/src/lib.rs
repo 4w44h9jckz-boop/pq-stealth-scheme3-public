@@ -91,7 +91,8 @@ pub trait StealthScheme {
     /// Keygen seed length. Other lengths are [`Error::Malformed`].
     const KEYGEN_SEED_BYTES: usize;
 
-    /// Announce seed length. §2.4: 64 bytes.
+    /// Announce seed length for [`Self::announce`]. Not from the ERC; schemeId 3 uses 64
+    /// bytes, `esk ‖ m`.
     const ANNOUNCE_SEED_BYTES: usize;
 
     /// Published via ERC-6538.
@@ -106,7 +107,7 @@ pub trait StealthScheme {
     /// Successful scan; input to [`Self::spend_key`].
     type Match;
     /// Output of [`Self::bind`]: tracking checked against a meta-address, plus values
-    /// [`Self::scan`] reuses (so `scan` does not rerun ML-KEM keygen per event).
+    /// [`Self::scan`] reuses.
     type Scanner;
     /// One-time spending key. A secp256k1 scalar for schemeId 3.
     type SpendKey;
@@ -115,8 +116,8 @@ pub trait StealthScheme {
     ///
     /// # Errors
     ///
-    /// [`Error::Malformed`] on a wrong length, [`Error::NoValidScalar`] after §1's retry
-    /// bound, [`Error::SpendingKeyDelegated`] if §2.1's guard fires.
+    /// [`Error::Malformed`] on a wrong length, [`Error::NoValidScalar`] if a seed half is not a
+    /// valid scalar (§2.1), [`Error::SpendingKeyDelegated`] if §2.1's guard fires.
     fn keygen(seed: &[u8]) -> Result<Keys<Self>, Error>
     where
         Self: Sized;
@@ -168,8 +169,8 @@ pub trait StealthScheme {
 
     /// One-time spending key for a match.
     ///
-    /// Call only after [`Self::scan`] returned [`Some`] for this announcement. SchemeIds 2
-    /// and 3 return [`Error::MasterKeyMismatch`] if `master`'s spending scalar does not
+    /// Call only after [`Self::scan`] returned [`Some`] for this announcement. SchemeId 3
+    /// returns [`Error::MasterKeyMismatch`] if `master`'s spending scalar does not
     /// control the match's stealth address (§2.6).
     ///
     /// # Errors

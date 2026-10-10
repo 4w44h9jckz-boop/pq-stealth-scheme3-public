@@ -229,10 +229,9 @@ def have_kem() -> bool:
 def kem_keygen(dz: bytes) -> tuple[bytes, bytes]:
     """`ML-KEM.KeyGen_internal(d, z)` -> `(ek, dk)`. §1 requires the internal entry point.
 
-    Takes the 64-byte `(d, z)` seed because §1 requires the decapsulation key to be
-    represented as that seed rather than the expanded form -- so the caller holds 64 bytes and
-    expands on demand, which is the property that makes the tracking key 64 bytes and not
-    2 400.
+    Takes the 64-byte `(d, z)` seed because §2.1 makes the tracking key carry that seed rather
+    than the expanded form -- so the caller holds 64 bytes and expands on demand, which is the
+    property that makes the tracking key 96 bytes and not 2 432.
     """
     assert len(dz) == 64, f"(d, z) is 64 bytes, got {len(dz)}"
     return _ML_KEM_768._keygen_internal(dz[:32], dz[32:])
@@ -253,8 +252,8 @@ def kem_decaps_expanded(dk: bytes, ct: bytes) -> bytes:
     """`ML-KEM.Decaps(dk, ct)` from the EXPANDED 2 400-byte key.
 
     **This exists for one purpose: consuming NIST's ACVP decapsulation cases**, whose `dk` is
-    the expanded form. §1 requires the 64-byte `(d, z)` seed as the representation, and the
-    difference is what makes a delegated tracking key 64 bytes rather than 2 400 -- so no
+    the expanded form. §2.1 makes the tracking key carry the 64-byte `(d, z)` seed, and the
+    difference is what makes a delegated tracking key 96 bytes rather than 2 432 -- so no
     derivation in this repository takes this path, and `kem_decaps` above is the one our vectors
     use.
 

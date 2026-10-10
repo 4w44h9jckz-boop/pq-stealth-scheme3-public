@@ -202,7 +202,7 @@ def group_1() -> dict[str, dict]:
                 hx(hashlib.sha256(vp.DS_VIEWTAG + ss).digest()[31:]),
             "leading_byte_of_H_ss": hx(base[:1]),
             "note": "the tag was eight bytes until the announced stealthAddress became the "
-                    "authoritative check (Section 2.5 MUST) and the tag was narrowed to a "
+                    "authoritative check (Section 2.5) and the tag was narrowed to a "
                     "prefilter; "
                     "an implementation carrying the old width matches nothing",
         },
@@ -289,6 +289,7 @@ def group_2(t1: dict) -> dict[str, dict]:
     three = ss_ec + ss_pq + epk
     v["V3-06"] = {"claim": "IKM is exactly ss_ec || ss_pq || epk || ct || viewing_pk_ec || ek",
                   "provisional": True,
+                  "provisional_because": PROVISIONAL_WHY,
                   "given": {"parts": {"ss_ec": hx(ss_ec), "ss_pq": hx(ss_pq), "epk": hx(epk),
                                       "ct": hx(ct), "viewing_pk_ec": hx(viewing_pk_ec),
                                       "ek": hx(ek)}},
@@ -418,8 +419,8 @@ def group_2(t1: dict) -> dict[str, dict]:
                       "spending_seed_n_minus_1": f"{vp.N - 1:064x}",
                       "viewing_ec_seed_0": hx(bytes(32))}},
                   "expect": {"outcome": "error, error, accepted, error"},
-                  "wrong": {"note": "reducing the seed mod n instead of rejecting it. "
-                                    "Nothing in this document reduces mod n: a library "
+                  "wrong": {"note": "reducing the seed mod n instead of rejecting it as "
+                                    "Section 2.1 requires: a library "
                                     "that reduces silently turns "
                                     "spending_seed = n into spending_seed = 0, and every "
                                     "payment to the resulting meta-address is spendable by "
@@ -439,7 +440,7 @@ def group_2(t1: dict) -> dict[str, dict]:
     v["V3-12"] = {"claim": "33 bytes of the right length can still be a non-point -- both "
                            "points MUST be validated before the meta-address is used",
                   "given": {"viewing_pk_ec_nonpoint": hx(b"\x02" + nonpoint_x.to_bytes(32, "big")),
-                            "why": f"x = {nonpoint_x} is the smallest x for which x^3 + 7 is "
+                            "why": f"x = {nonpoint_x} is the smallest positive x for which x^3 + 7 is "
                                    f"not a square mod p, so no y exists and this is 33 "
                                    f"well-formed bytes that are not a point",
                             "viewing_pk_ec_valid": hx(viewing_pk_ec)},
