@@ -606,9 +606,10 @@ as Section 2.4 requires.
 A second, seeded `announce` takes that randomness as input instead. 
 It exists so that the vectors, the demonstration and the gas harness are reproducible, 
 and it is not a sender for real payments. 
-The harness feeds it seeds from SHAKE256 over a fixed secret and a counter. 
-Keygen seeds come from HKDF-SHA256, 
-which is one instance of the requirements in Section 2.1 
+The harness feeds it seeds from SHAKE256 over a fixed secret and a counter, 
+and takes its keys from a fixed 128-byte keygen seed. 
+The implementation also provides a keygen seed derivation from a master key with HKDF-SHA256. 
+It is one instance of the requirements in Section 2.1 
 and not part of the standard.
 
 The gas figures under Rationale come from three harnesses in the same repository: 

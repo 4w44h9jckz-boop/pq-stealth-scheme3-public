@@ -454,8 +454,8 @@ mod tests {
     /// Stand-in so the derivation can be tested without a scheme crate. `NAME` is bound in.
     ///
     /// **`keygen_seed` / `announce_seed` are not in the ERC.** §2.1 and §2.4 state requirements
-    /// for seed production, not a construction. The golden bytes below are regression pins for this crate's KDF (used by
-    /// the harness), not rows from `vectors/`.
+    /// for seed production, not a construction. The golden bytes below are regression pins for
+    /// this crate's KDF, not rows from `vectors/`. The harness does not use it.
     struct SeedFixture;
 
     impl SeedFixture {

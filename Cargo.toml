@@ -73,12 +73,11 @@ k256 = { version = "0.13", default-features = false, features = ["ecdh", "arithm
 ml-kem = { version = "0.3.2", default-features = false, features = ["alloc"] }
 sha2 = { version = "0.10", default-features = false }
 sha3 = { version = "0.10", default-features = false }
-# Wallet seed derivation used by the harness. It is not part of the ERC wire protocol.
+# Keygen seed derivation from a master key (`pqsa_core::keygen_seed`), for wallets. It is not
+# part of the ERC, and the harness does not use it: the harness's keys come from a fixed seed.
 #
-# RustCrypto's rather than hand-rolled, and the reason is evidence rather than caution: HKDF is
-# twenty lines over HMAC and hand-rolling it would be safe enough, but `tools/vecprim.py` ALREADY
-# hand-rolls it. Two hand-rolled copies by one author agreeing proves nothing; a hand-rolled one
-# agreeing with RustCrypto gives the regression pins an implementation-independent cross-check.
+# RustCrypto's rather than hand-rolled. The golden bytes in `crates/core` pin this crate's own
+# output; nothing in the tree checks them against an independent HKDF.
 hkdf = { version = "0.12", default-features = false }
 # The operating system's CSPRNG, for the sender's `esk` and ML-KEM's `m` (§2.4). Fallible,
 # so an RNG failure is an error rather than a panic.
