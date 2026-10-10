@@ -156,6 +156,17 @@ fn v3_09_point(key: &str) -> pqsa_ec::CompressedPoint {
     point(&hx(obj(row(section_2(), "V3-09"), "expect"), key))
 }
 
+/// §2.8's `checkStealthAddress` with V3-09's keys, as `viewingKey` and `spendingPubKey`.
+fn v3_09_check(stealth_address: &[u8; 20], ephemeral_pub_key: &[u8]) -> Result<bool, Error> {
+    let expect = obj(row(section_2(), "V3-09"), "expect");
+    erc5564::check_stealth_address(
+        stealth_address,
+        ephemeral_pub_key,
+        &hx(expect, "tracking"),
+        &hx(expect, "spending_pk"),
+    )
+}
+
 fn combine_parts(ds: &[u8], parts: &Value) -> Bytes32 {
     combine_secrets(
         ds,
@@ -624,6 +635,7 @@ fn v3_09_keygen_matches_nist_ek() {
         tracking_bytes.len(),
         usize::try_from(u64_field(expect, "tracking_bytes")).unwrap()
     );
+    assert_eq!(tracking_bytes.len(), erc5564::VIEWING_KEY_BYTES);
     assert_eq!(encode(&master.spending_seed), s(expect, "master"));
 }
 
@@ -817,6 +829,12 @@ fn v3_15_announcement_shape() {
                 want_some,
                 "ephemeralPubKey {epk_len} metadata {md_len}"
             );
+            // §2.8: no metadata goes in, and a skip is `false`, not an error.
+            assert_eq!(
+                v3_09_check(&[0u8; 20], &epk),
+                Ok(false),
+                "ephemeralPubKey {epk_len}"
+            );
         }
     }
 }
@@ -979,6 +997,7 @@ fn v3_18_a_non_point_epk_is_a_skip() {
             SchemeId3::announcement_from_bytes(&[0u8; 20], &field, &metadata).is_none(),
             "{name} is a skip"
         );
+        assert_eq!(v3_09_check(&[0u8; 20], &field), Ok(false), "{name}");
     }
 
     // A decoder that reduced x mod p would read x = p + 1 as this point.
@@ -1037,4 +1056,11 @@ fn v3_19_an_ek_failing_the_key_check_is_an_error() {
     assert!(matches!(SchemeId3::announce_random(&bad), Err(Error::Kem)));
     let good = SchemeId3::meta_from_bytes(&good_bytes).expect("both points are valid");
     SchemeId3::announce(&good, &seed).expect("a valid ek encapsulates");
+
+    // §2.8's generateStealthAddress.
+    assert_eq!(
+        erc5564::generate_stealth_address(&bad_bytes),
+        Err(Error::Kem)
+    );
+    erc5564::generate_stealth_address(&good_bytes).expect("a valid ek encapsulates");
 }

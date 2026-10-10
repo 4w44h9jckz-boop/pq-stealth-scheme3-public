@@ -32,7 +32,7 @@ The specification is [ERC-8441](https://github.com/ethereum/ERCs/pull/2059), in 
 | `crates/core` | the `StealthScheme` trait |
 | `crates/ec` | secp256k1: SEC1 decoding, ECDH, scalar and point addition, the address |
 | `crates/kem` | ML-KEM-768, over `ml-kem`, checked against NIST's own ACVP cases |
-| `crates/per-payment` | the scheme itself |
+| `crates/per-payment` | the scheme itself, and ERC-5564's three methods for it (`erc5564`) |
 | `vectors/` | the fixtures saying what each row pins and which wrong output it distinguishes |
 | `harness/` | the gas harnesses: real transactions against a real node, with their receipts |
 | `tools/` | fixture generation, size derivation, and offline snapshot/document checks |

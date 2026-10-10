@@ -350,6 +350,7 @@ so handing it any one-time key hands it the master key.
 | `spending_seed` equal to `viewing_ec_seed`, `d` or `z` | error, at key generation |
 | meta-address not 1 250 bytes, or either point invalid | error, at decoding |
 | `ek` fails FIPS 203's encapsulation input check | error, at encapsulation |
+| `viewingKey`, `spendingPubKey` or `spendingKey` malformed (Section 2.8) | error |
 
 #### 2.8 ERC-5564 methods
 
@@ -366,6 +367,26 @@ and it returns `false` wherever Section 2.7 says skip.
 - `computeStealthKey(stealthAddress, ephemeralPubKey, viewingKey, spendingKey)` implements Section 2.6.
 - `viewingKey` is the 96-byte tracking key, from which `viewing_pk_ec` and `ek` are recomputed.
   `spendingPubKey` is `spending_pk`, and `spendingKey` is `spending_sk`.
+
+`viewingKey`, `spendingPubKey` and `spendingKey` are the caller's own keys, not announcement data. 
+`checkStealthAddress` and `computeStealthKey` fail, rather than return `false`, 
+when `viewingKey` is not 96 bytes or its `viewing_ec` is not a valid scalar, 
+when `spendingPubKey` is not a valid compressed point (Section 2.2), 
+or when `spendingKey` is not a valid scalar. 
+Returning `false` would turn a broken key into a scan that finds nothing.
+
+`computeStealthKey` MUST fail rather than return a key 
+when `ephemeralPubKey` is malformed 
+or when `address(stealth_sk·G)` differs from `stealthAddress`. 
+This is the check of Section 2.6, 
+and the reason ERC-5564 passes `stealthAddress` in.
+
+`checkStealthAddress` receives no meta-address, 
+so it cannot compare the recomputed `viewing_pk_ec` and `ek` with the registered ones (Section 2.5), 
+and a corrupted `viewingKey` returns `false` for every announcement. 
+A wallet that scans with it SHOULD make that comparison once before scanning. 
+`viewingKey` is the same on every call, 
+so an implementation MAY compute `viewing_pk_ec`, `ek` and the expanded `dk` once and reuse them.
 
 ### 3. Wire format
 
@@ -599,7 +620,9 @@ Its `per-payment` crate implements this scheme on three others:
 `kem` (ML-KEM-768, checked against NIST ACVP), 
 `ec` (secp256k1) 
 and `core` (the interface the scheme implements).
-It passes every vector above.
+It passes every vector above. 
+Its `erc5564` module provides the three methods of Section 2.8, 
+taking and returning the bytes that ERC-5564's signatures do.
 
 Its sender, `announce_random`, draws `esk` and ML-KEM's `m` from the operating system's CSPRNG,
 as Section 2.4 requires. 

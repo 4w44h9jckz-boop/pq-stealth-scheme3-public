@@ -215,6 +215,34 @@ fn add_points(spending: &CompressedPoint, offset: &Bytes32) -> Option<Compressed
     let offset_point = pqsa_ec::public_point(offset).ok()?;
     pqsa_ec::add_points(spending, &offset_point).ok()
 }
+
+/// `epk` and `ct` from an `ephemeralPubKey`, or `None` for any shape §2.7 makes a skip:
+/// a length other than 1 121, or an `epk` that is not a valid compressed point.
+fn parse_ephemeral_pub_key(field: &[u8]) -> Option<(CompressedPoint, &[u8])> {
+    if field.len() != EPHEMERAL_PUB_KEY_BYTES {
+        return None;
+    }
+    let (epk, ct) = field.split_at(33);
+    Some((pqsa_ec::decode_point(epk).ok()?, ct))
+}
+
+/// §2.5 up to `ss`: ECDH, decapsulation and the combiner, with the scanner's verified `ek`.
+fn payment_secret(scanner: &Scanner, epk: &CompressedPoint, ct: &[u8]) -> Option<Bytes32> {
+    let viewing_ec_seed = scanner.viewing_ec_seed?;
+    let viewing_pk_ec = scanner.viewing_pk_ec?;
+    let ss_ec = pqsa_ec::ecdh(&viewing_ec_seed, epk).ok()?;
+    let ss_pq = MlKem768::decapsulate(&scanner.kem_seed, ct).ok()?;
+    combine_secrets(
+        DS_HYBRID,
+        &ss_ec,
+        &ss_pq,
+        epk,
+        ct,
+        &viewing_pk_ec,
+        &scanner.ek,
+    )
+    .ok()
+}
 /// schemeId 3 combiner domain separator. §2.4.
 const DS_HYBRID: &[u8] = b"pq-stealth/hybrid-payment/v1";
 
@@ -340,21 +368,7 @@ impl StealthScheme for SchemeId3 {
     /// ECDH + decaps + combiner. `epk` and `ct` are fresh per announcement. The long-term
     /// tracking key still decapsulates every past `ct`.
     fn scan(scanner: &Scanner, ann: &Announcement) -> Option<Match> {
-        let epk = ann.epk?;
-        let viewing_ec_seed = scanner.viewing_ec_seed?;
-        let viewing_pk_ec = scanner.viewing_pk_ec?;
-        let ss_ec = pqsa_ec::ecdh(&viewing_ec_seed, &epk).ok()?;
-        let ss_pq = MlKem768::decapsulate(&scanner.kem_seed, &ann.ct).ok()?;
-        let ss = combine_secrets(
-            DS_HYBRID,
-            &ss_ec,
-            &ss_pq,
-            &epk,
-            &ann.ct,
-            &viewing_pk_ec,
-            &scanner.ek,
-        )
-        .ok()?;
+        let ss = payment_secret(scanner, &ann.epk?, &ann.ct)?;
         match_from_secret(&ss, &scanner.spending, &ann.view_tag, &ann.stealth_address)
     }
 
@@ -436,12 +450,12 @@ impl StealthScheme for SchemeId3 {
         ephemeral_pub_key: &[u8],
         metadata: &[u8],
     ) -> Option<Announcement> {
-        if ephemeral_pub_key.len() != EPHEMERAL_PUB_KEY_BYTES || metadata.len() < VIEW_TAG_BYTES {
+        if metadata.len() < VIEW_TAG_BYTES {
             return None;
         }
-        let (epk, ct) = ephemeral_pub_key.split_at(33);
+        let (epk, ct) = parse_ephemeral_pub_key(ephemeral_pub_key)?;
         Some(Announcement {
-            epk: Some(pqsa_ec::decode_point(epk).ok()?),
+            epk: Some(epk),
             ct: ct.to_vec(),
             view_tag: metadata[..VIEW_TAG_BYTES].try_into().ok()?,
             stealth_address: *stealth_address,
@@ -487,6 +501,8 @@ redacted_debug!(Master, secrets: [spending_seed, viewing_ec_seed, kem_seed], sho
 redacted_debug!(Tracking, secrets: [viewing_ec_seed, kem_seed], shown: []);
 redacted_debug!(Scanner, secrets: [kem_seed, viewing_ec_seed], shown: [ek, viewing_pk_ec, spending]);
 redacted_debug!(Match, secrets: [shared_secret], shown: [stealth_address]);
+
+pub mod erc5564;
 
 #[cfg(test)]
 mod spec_vectors;
