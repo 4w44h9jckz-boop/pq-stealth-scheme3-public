@@ -2,8 +2,9 @@
 
 ## 1. Each test vector is explainable
 
-Each file is `{"section": ..., "vectors": {id: row}}`, and each row states the claim, its
-inputs, the expected output and the wrong outputs it distinguishes, e.g. V1-03:
+Each file is `{"section": ..., "vectors": {id: row}}`, 
+and each row states the claim, 
+its inputs, the expected output and the wrong outputs it distinguishes, e.g. V1-03:
 
 ```json
 "V1-03": {
@@ -16,8 +17,9 @@ inputs, the expected output and the wrong outputs it distinguishes, e.g. V1-03:
 }
 ```
 
-`wrong` is left out where no likely mistake needs naming (V1-01). A row whose constant is still
-a proposal also carries `"provisional": true` and a `provisional_because`.
+`wrong` is left out where no likely mistake needs naming (V1-01). 
+A row whose constant is still a proposal also carries `"provisional": 
+true` and a `provisional_because`.
 
 ### Two tiers of test vectors
 
