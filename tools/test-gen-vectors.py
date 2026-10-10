@@ -221,17 +221,29 @@ def main() -> int:
     case("and says tier 1 is NIST's", "does not compute it" in out, True)
 
     print("\nevery KEM value traces to the vendored file")
-    root = tree(plan_of(**{"1": [], "2": ["V3-06a", "V3-08"]}))
+    root = tree(plan_of(**{"1": [], "2": ["V3-03", "V3-06a", "V3-08", "V3-14", "V3-17",
+                                         "V3-18", "V3-19"]}))
     run(root)
     acvp = json.loads((root / "vectors/tier1/ml-kem-768-acvp.json").read_text())
     known = {x["ek"] for x in acvp["keygen"]}
     known |= {x[k] for x in acvp["encapsulation"] for k in ("ek", "m", "c", "k")}
+    known |= {x[k] for x in acvp["decapsulation"] for k in ("c", "k")}
+    # FIPS 203's expanded dk carries ek at [1152:2336]; V3-14 and V3-17 take it from there.
+    known |= {x["dk"][2 * 1152:2 * 2336] for x in acvp["decapsulation"]}
+    known |= {x["ek"] for x in acvp["encapsulation_key_check"]}
     body = json.loads((root / "vectors/section-2.json").read_text())["vectors"]
-    # Any 1088- or 1184-byte hex string in the output must be one NIST published. A
-    # synthesised ciphertext is the one artifact this generator must never produce.
+    # Any 1088- or 1184-byte hex string in the output must be one NIST published, and so must
+    # the ct in a 1121-byte ephemeralPubKey and the ek in a 1250-byte meta-address. A
+    # synthesised ciphertext is the one artifact this generator must never produce. Each
+    # yield is the places the value may sit: V3-08's wrong ordering puts ct first.
     def long_hex(o):
-        if isinstance(o, str) and len(o) in (2176, 2368) and all(c in "0123456789abcdef" for c in o):
-            yield o
+        if isinstance(o, str) and all(c in "0123456789abcdef" for c in o):
+            if len(o) in (2176, 2368):
+                yield (o,)
+            elif len(o) == 2 * 1121:
+                yield (o[2 * 33:], o[:2 * 1088])
+            elif len(o) == 2 * 1250:
+                yield (o[2 * 66:],)
         elif isinstance(o, dict):
             for x in o.values():
                 yield from long_hex(x)
@@ -241,7 +253,7 @@ def main() -> int:
     found = list(long_hex(body))
     case("KEM-length values appear in the output", len(found) > 0, True)
     case("and every one of them is a NIST-published value",
-         [f for f in found if f not in known], [])
+         [f for f in found if not any(at in known for at in f)], [])
 
     print("\n--check rejects edited, missing-row and absent-file states")
     root = tree(plan_of(**{"1": ["V1-01"], "2": []}))

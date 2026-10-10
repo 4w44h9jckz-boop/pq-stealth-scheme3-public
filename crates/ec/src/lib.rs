@@ -128,7 +128,7 @@ pub fn add_points(a: &CompressedPoint, b: &CompressedPoint) -> Result<Compressed
     Ok(CompressedPoint(out))
 }
 
-/// Ethereum address: low 20 bytes of keccak256(uncompressed x‖y), no `0x04` prefix. V2-09.
+/// Ethereum address: low 20 bytes of keccak256(uncompressed x‖y), no `0x04` prefix. V3-13.
 #[must_use]
 pub fn address_of(point: &CompressedPoint) -> [u8; 20] {
     // Invariant: only decode_point / public_point construct CompressedPoint.
@@ -157,9 +157,9 @@ mod tests {
         unhex(s).try_into().unwrap()
     }
 
-    /// V2-07: compact `0x05` rejected; same x is valid as `0x03`.
+    /// Compact `0x05` rejected; same x is valid as `0x03`. The rule V3-03 pins.
     #[test]
-    fn v2_07_the_compact_tag_is_rejected_and_its_point_is_valid() {
+    fn the_compact_tag_is_rejected_and_its_point_is_valid() {
         let compact = unhex("054f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa");
         let proper = unhex("034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa");
         assert!(matches!(decode_point(&compact), Err(Error::Malformed)));
@@ -221,9 +221,9 @@ mod tests {
         assert_eq!(ecdh(&esk, &vpk).unwrap(), ecdh(&vsk, &epk).unwrap());
     }
 
-    /// V2-09: keccak256(x‖y)[12..32], not prefix / first-20 / SHA3-256.
+    /// keccak256(x‖y)[12..32], not prefix / first-20 / SHA3-256. The rule V3-13 pins.
     #[test]
-    fn v2_09_the_address_derivation() {
+    fn the_address_derivation() {
         let pk = decode_point(&unhex(
             "034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa",
         ))
