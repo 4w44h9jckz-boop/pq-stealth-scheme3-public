@@ -83,6 +83,34 @@ fn acvp_encaps_matches_nist() {
     }
 }
 
+/// NIST's encapsulation key checks (FIPS 203 §7.2): [`MlKem768::encapsulate`] refuses exactly
+/// the keys NIST says fail. §2.2.
+#[test]
+fn acvp_encapsulation_key_checks_match_nist() {
+    let rows = cases("encapsulation_key_check");
+    assert_eq!(
+        rows.len(),
+        10,
+        "all ten ML-KEM-768 encapsulation key checks"
+    );
+    for case in rows {
+        let passed = case
+            .get("testPassed")
+            .and_then(Value::as_bool)
+            .expect("every key check has testPassed");
+        let got = MlKem768::encapsulate(&hx(case, "ek"), &[0u8; 32]);
+        if passed {
+            assert!(got.is_ok(), "tcId {}: NIST accepts this ek", tc_id(case));
+        } else {
+            assert!(
+                matches!(got, Err(Error::Kem)),
+                "tcId {}: NIST rejects this ek",
+                tc_id(case)
+            );
+        }
+    }
+}
+
 /// NIST decapsulation, including five `modified ciphertext` implicit rejections.
 ///
 /// **Not** [`MlKem768::decapsulate`]: ACVP's `dk` is the 2 400-byte expanded form

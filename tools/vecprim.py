@@ -295,6 +295,26 @@ def acvp_selftest(tier1: dict) -> list[str]:
         if ss.hex() != c["k"]:
             bad.append(f"decaps tcId {c['tcId']} ({c['reason']}): ss disagrees with ACVP")
     return bad
+
+
+ML_KEM_Q = 3329
+
+
+def ek_out_of_range(ek: bytes) -> tuple[int, int] | None:
+    """FIPS 203 §7.2's modulus check on an ML-KEM-768 `ek`: the first 12-bit coefficient of
+    `ek[0:1152]` that is at least q, as `(index, value)`, or None if every one is below q.
+
+    ByteDecode12 then ByteEncode12 is the identity exactly when no coefficient is at least q, so
+    this is the check FIPS 203 states, read off the packing: three bytes hold two coefficients,
+    low nibble of the middle byte with the first. The type check (1 184 bytes) is the caller's.
+    """
+    assert len(ek) == 1184, f"an ML-KEM-768 ek is 1 184 bytes, got {len(ek)}"
+    for i in range(0, 1152, 3):
+        b0, b1, b2 = ek[i], ek[i + 1], ek[i + 2]
+        for j, c in enumerate((b0 | (b1 & 0x0F) << 8, b1 >> 4 | b2 << 4)):
+            if c >= ML_KEM_Q:
+                return (2 * (i // 3) + j, c)
+    return None
 def offset_scalar(base: bytes) -> int:
     """§1's range check. Returns `base` as an integer if `0 < base < n`.
 

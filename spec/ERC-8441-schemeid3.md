@@ -550,7 +550,7 @@ and the wrong output it distinguishes.
 | file | rows | what it pins |
 |---|---|---|
 | [`vectors/section-1.json`](../assets/erc-8441/vectors/section-1.json) | 6 | Section 1: the offset, its range check, byte order and the view tag |
-| [`vectors/section-2.json`](../assets/erc-8441/vectors/section-2.json) | 19 | Section 2: keys and seeds, the meta-address, the combiner and its bindings, the address, the wire mapping, and what counts as a skip |
+| [`vectors/section-2.json`](../assets/erc-8441/vectors/section-2.json) | 23 | Section 2: keys and seeds, the meta-address and its encapsulation key check, the combiner and its bindings, the stealth key pair and its address, the wire mapping, and what counts as a skip |
 
 The generator, [`tools/gen_vectors.py`](../assets/erc-8441/tools/gen_vectors.py), 
 does its arithmetic in [`tools/vecprim.py`](../assets/erc-8441/tools/vecprim.py) 
@@ -572,9 +572,13 @@ so they pin `ct` and `ss_pq`.
 A sender using `ML-KEM.Encaps(ek)` produces different, 
 equally valid announcements. 
 Every scanner-side vector applies to it unchanged.
-- **Decapsulation of a foreign ciphertext uses NIST's own case.** 
+- **ML-KEM's edge cases are NIST's own.** 
 V3-14 takes an ACVP `modified ciphertext` case, 
-so implicit rejection is checked against NIST's expected value.
+so implicit rejection is checked against NIST's expected value, 
+and V3-17 a `valid decapsulation` case. 
+ACVP gives those keys only in expanded form, 
+so both rows also give `ss_pq` for an implementation that holds keys as `(d, z)` seeds. 
+V3-19 takes an encapsulation key that NIST's key check rejects.
 
 Two vectors from `section-1.json`:
 
