@@ -60,42 +60,6 @@ which is **independent** from the reference implementation that they test.
 spec_vector.rs (implementing the test vectors) in per_payment matches the two implementation outputs for additional correctness check.
 For ML-KEM: the ciphertexts are of **NIST's own ACVP file**, vendored at `vectors/tier1/`.
 
-## Submitting to the ERCs repository
-
-The specification here links this repository's files, which do not exist in
-[ethereum/ERCs](https://github.com/ethereum/ERCs). `tools/erc_submission.py` writes the copy that
-goes there, with other proposals linked as `./eip-N.md`, the copyright line linking
-`../LICENSE.md`, and the vectors and their generator as assets. It fails if any link would not
-resolve there, and runs `gen_vectors.py --check` on the copied assets. `discussions-to` already
-names the
-[Ethereum Magicians thread](https://ethereum-magicians.org/t/hybrid-post-quantum-stealth-addresses-erc-5564-schemeid-3/29923).
-
-The editors assign the number after the pull request is opened, so there are two stages. `--out`
-is a clone of your fork of ethereum/ERCs.
-
-1. **The draft.** This writes `ERCS/erc-0.md`, with no `eip` header, and `assets/erc-0/`. The
-   template's `eip-draft_<title>.md` name stops the ERCs linter workflow, which reads the
-   proposal number from the file name:
-
-   ```bash
-   python3 tools/erc_submission.py --draft --out path/to/ERCs
-   ```
-
-   In the ERCs clone, add a line `nam` to `config/.codespell-whitelist`, since codespell otherwise
-   reads the first author's name as a misspelling of "Name". Commit, push to your fork, and open
-   a pull request against `master`. Until a number is assigned, the ERCs linter reports the
-   missing `eip` header.
-
-2. **Once an editor assigns N.** This writes `ERCS/erc-N.md` and `assets/erc-N/`. EIP-1 makes
-   `created` the date of numbering:
-
-   ```bash
-   python3 tools/erc_submission.py --number N --created yyyy-mm-dd --out path/to/ERCs
-   ```
-
-   Remove the draft files with the `git rm` line it prints, then push to the same pull request.
-   Retitle the Magicians thread `ERC-N: ...` and add the pull request to its opening post.
-
 ## Kohaku Integration PoC
 
 [Kohaku-ts Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)
