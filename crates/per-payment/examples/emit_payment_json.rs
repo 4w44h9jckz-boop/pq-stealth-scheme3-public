@@ -16,7 +16,7 @@ fn fixture<S: StealthScheme + ExportableSpendKey>(
         .map(|i| (i as u8).wrapping_mul(7).wrapping_add(3))
         .collect();
     let (meta, master, tracking) = S::keygen(&seed).expect("fixture key generation");
-    let mut sender = SenderState::resume([0x5a; 32], 0);
+    let mut sender = SenderState::resume(&[0x5a; 32], 0);
     let announcement_seed = sender.draw_seed::<S>().expect("fixture announcement seed");
     let announcement = S::announce(&meta, &announcement_seed).expect("fixture announcement");
     let (address, ephemeral_pub_key, metadata) = S::announcement_to_bytes(&announcement);

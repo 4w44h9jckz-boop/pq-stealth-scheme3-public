@@ -60,6 +60,21 @@ which is **independent** from the reference implementation that they test.
 spec_vector.rs (implementing the test vectors) in per_payment matches the two implementation outputs for additional correctness check.
 For ML-KEM: the ciphertexts are of **NIST's own ACVP file**, vendored at `vectors/tier1/`.
 
+## Secret ownership
+
+Owned seeds, shared secrets and offsets use `zeroize::Zeroizing`; spending keys use
+`secrecy::SecretBox<[u8; 32]>`. Borrow signer input with `SchemeId3::spend_key_bytes(&key)`
+via the `ExportableSpendKey` trait. Borrowed inputs and copies made by callers/signers need
+their own secret owners. `Zeroizing` does not redact direct field debug output; the aggregate
+secret types and spending key do redact it.
+
+## Public representations
+
+Construct `MetaAddress` and `Announcement` with `new(...)` or the byte parsers. Their
+viewing/ephemeral points are required `CompressedPoint` values; private `ek`/`ct` buffers
+have checked lengths and read-only `ek()`/`ct()` getters. Constructors check wire shape;
+ML-KEM key validation and implicit rejection remain in the KEM engine.
+
 ## Kohaku Integration PoC
 
 [Kohaku-ts Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)

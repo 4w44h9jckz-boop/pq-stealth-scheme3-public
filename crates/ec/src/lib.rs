@@ -13,6 +13,7 @@ use k256::elliptic_curve::sec1::ToEncodedPoint;
 use k256::{AffinePoint, ProjectivePoint, Scalar};
 use pqsa_core::{Bytes32, Error};
 use sha3::{Digest, Keccak256};
+use zeroize::Zeroizing;
 
 /// SEC1 compressed even-`y` tag. §2.2.
 const TAG_EVEN: u8 = 0x02;
@@ -20,14 +21,25 @@ const TAG_EVEN: u8 = 0x02;
 const TAG_ODD: u8 = 0x03;
 
 /// 32-byte big-endian scalar. Rejects 0 and values ≥ n; does not reduce modulo n. §1.
-fn scalar_of(bytes: &Bytes32) -> Result<Scalar, Error> {
+fn scalar_of(bytes: &Bytes32) -> Result<Zeroizing<Scalar>, Error> {
     // `from_repr` is None at or above n, not a reduction.
-    let s =
-        Option::<Scalar>::from(Scalar::from_repr((*bytes).into())).ok_or(Error::NoValidScalar)?;
+    let s = Zeroizing::new(
+        Option::<Scalar>::from(Scalar::from_repr((*bytes).into())).ok_or(Error::NoValidScalar)?,
+    );
     if s.is_zero().into() {
         return Err(Error::NoValidScalar);
     }
     Ok(s)
+}
+
+/// Validate a 32-byte big-endian scalar without computing its public point. §1.
+///
+/// # Errors
+///
+/// [`Error::NoValidScalar`] if the scalar is 0 or ≥ n; does not reduce modulo n.
+pub fn validate_scalar(bytes: &Bytes32) -> Result<(), Error> {
+    let _scalar = scalar_of(bytes)?;
+    Ok(())
 }
 
 /// SEC1 compressed point (`0x02`/`0x03` + 32-byte x). Only [`decode_point`] / [`public_point`] construct this.
@@ -68,7 +80,9 @@ pub fn decode_point(bytes: &[u8]) -> Result<CompressedPoint, Error> {
 /// [`Error::NoValidScalar`] if the scalar is 0 or ≥ n.
 pub fn public_point(scalar: &Bytes32) -> Result<CompressedPoint, Error> {
     let s = scalar_of(scalar)?;
-    let affine = (ProjectivePoint::GENERATOR * s).to_affine();
+    // Borrow the guarded scalar to avoid a local copy.
+    #[allow(clippy::op_ref)]
+    let affine = (ProjectivePoint::GENERATOR * &*s).to_affine();
     let enc = affine.to_encoded_point(true);
     let out: [u8; 33] = enc.as_bytes().try_into().map_err(|_| Error::Malformed)?;
     Ok(CompressedPoint(out))
@@ -80,17 +94,20 @@ pub fn public_point(scalar: &Bytes32) -> Result<CompressedPoint, Error> {
 /// # Errors
 ///
 /// [`Error::NoValidScalar`] if `scalar` is 0 or ≥ n.
-pub fn ecdh(scalar: &Bytes32, point: &CompressedPoint) -> Result<Bytes32, Error> {
+pub fn ecdh(scalar: &Bytes32, point: &CompressedPoint) -> Result<Zeroizing<Bytes32>, Error> {
     let s = scalar_of(scalar)?;
     let p = Option::<AffinePoint>::from(AffinePoint::from_bytes(&(*point.as_bytes()).into()))
         .ok_or(Error::Malformed)?;
-    let shared = (ProjectivePoint::from(p) * s).to_affine();
+    // Borrow the guarded scalar to avoid a local copy.
+    #[allow(clippy::op_ref)]
+    let shared = Zeroizing::new(ProjectivePoint::from(p) * &*s);
+    let affine = Zeroizing::new(shared.to_affine());
     // x from uncompressed (0x04 || x || y); compressed [1..33] is the same x but easy to
     // confuse with including the parity tag.
-    let enc = shared.to_encoded_point(false);
+    let enc = Zeroizing::new(affine.to_encoded_point(false));
     let bytes = enc.as_bytes();
     debug_assert_eq!(bytes.len(), 65, "uncompressed SEC1 is 0x04 || x || y");
-    let x: Bytes32 = bytes[1..33].try_into().map_err(|_| Error::Malformed)?;
+    let x = Zeroizing::new(bytes[1..33].try_into().map_err(|_| Error::Malformed)?);
     Ok(x)
 }
 
@@ -99,14 +116,19 @@ pub fn ecdh(scalar: &Bytes32, point: &CompressedPoint) -> Result<Bytes32, Error>
 /// # Errors
 ///
 /// [`Error::NoValidScalar`] if either input is not in `1..n`, or if the sum is 0.
-pub fn add_scalars(scalar: &Bytes32, offset: &Bytes32) -> Result<Bytes32, Error> {
+pub fn add_scalars(scalar: &Bytes32, offset: &Bytes32) -> Result<Zeroizing<Bytes32>, Error> {
     let a = scalar_of(scalar)?;
     let b = scalar_of(offset)?;
-    let sum = a + b;
+    // Borrow the guarded scalars to avoid local copies.
+    #[allow(clippy::op_ref)]
+    let sum = Zeroizing::new(&*a + &*b);
     if sum.is_zero().into() {
         return Err(Error::NoValidScalar);
     }
-    Ok(sum.to_bytes().into())
+    let bytes = Zeroizing::new(sum.to_bytes());
+    Ok(Zeroizing::new(
+        bytes.as_slice().try_into().map_err(|_| Error::Malformed)?,
+    ))
 }
 
 /// Point addition. Sender/scanner side of §1: `spending_pk + offset·G`.
@@ -145,12 +167,22 @@ pub fn address_of(point: &CompressedPoint) -> [u8; 20] {
 mod tests {
     use super::*;
 
+    #[test]
+    fn secret_outputs_zeroize_on_drop() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+        let scalar = [0x11; 32];
+        let point = public_point(&scalar).unwrap();
+        assert_zeroize_on_drop(&scalar_of(&scalar).unwrap());
+        assert_zeroize_on_drop(&ecdh(&scalar, &point).unwrap());
+        assert_zeroize_on_drop(&add_scalars(&scalar, &[0x22; 32]).unwrap());
+    }
+
     fn unhex(s: &str) -> Vec<u8> {
         hex::decode(s).expect("test fixture is hex")
     }
 
-    fn hexlify(b: &[u8]) -> String {
-        hex::encode(b)
+    fn hexlify<T: AsRef<[u8]> + ?Sized>(b: &T) -> String {
+        hex::encode(b.as_ref())
     }
 
     fn b32(s: &str) -> Bytes32 {
@@ -258,7 +290,7 @@ mod tests {
         let n_minus_1 = b32("fffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364140");
         let two = b32("0000000000000000000000000000000000000000000000000000000000000002");
         let one = b32("0000000000000000000000000000000000000000000000000000000000000001");
-        assert_eq!(add_scalars(&n_minus_1, &two).unwrap(), one);
+        assert_eq!(*add_scalars(&n_minus_1, &two).unwrap(), one);
     }
 
     /// `(s + h)·G == s·G + h·G`, checked directly through `k256` without this crate's wrappers.

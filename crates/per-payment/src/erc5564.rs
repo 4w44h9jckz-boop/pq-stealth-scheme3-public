@@ -11,7 +11,7 @@
 //! `Ok(false)` in [`check_stealth_address`].
 
 use crate::{
-    Master, Match, Scanner, SchemeId3, match_from_secret, parse_ephemeral_pub_key, payment_secret,
+    Scanner, SchemeId3, SpendKey, match_from_secret, parse_ephemeral_pub_key, payment_secret,
     spend_key_from, view_tag_of,
 };
 use pqsa_core::{Bytes32, Error, StealthScheme, VIEW_TAG_BYTES};
@@ -81,22 +81,12 @@ pub fn compute_stealth_key(
     ephemeral_pub_key: &[u8],
     viewing_key: &[u8],
     spending_key: &[u8],
-) -> Result<Bytes32, Error> {
-    let spending_seed: Bytes32 = spending_key.try_into().map_err(|_| Error::Malformed)?;
-    let scanner = scanner_from(viewing_key, pqsa_ec::public_point(&spending_seed)?)?;
+) -> Result<SpendKey, Error> {
+    let spending_seed: &Bytes32 = spending_key.try_into().map_err(|_| Error::Malformed)?;
+    let scanner = scanner_from(viewing_key, pqsa_ec::public_point(spending_seed)?)?;
     let (epk, ct) = parse_ephemeral_pub_key(ephemeral_pub_key).ok_or(Error::Malformed)?;
     let shared_secret = payment_secret(&scanner, &epk, ct).ok_or(Error::Malformed)?;
-    spend_key_from(
-        &Master {
-            spending_seed,
-            viewing_ec_seed: None,
-            kem_seed: Vec::new(),
-        },
-        &Match {
-            stealth_address: *stealth_address,
-            shared_secret,
-        },
-    )
+    spend_key_from(spending_seed, &shared_secret, stealth_address)
 }
 
 /// The scanner §2.8 describes: `viewing_pk_ec` and `ek` recomputed from `viewing_key`, and
@@ -106,12 +96,12 @@ fn scanner_from(viewing_key: &[u8], spending: CompressedPoint) -> Result<Scanner
         return Err(Error::Malformed);
     }
     let (viewing_ec, kem_seed) = viewing_key.split_at(32);
-    let viewing_ec_seed: Bytes32 = viewing_ec.try_into().map_err(|_| Error::Malformed)?;
-    let viewing_pk_ec = pqsa_ec::public_point(&viewing_ec_seed)?;
+    let viewing_ec_seed: &Bytes32 = viewing_ec.try_into().map_err(|_| Error::Malformed)?;
+    let viewing_pk_ec = pqsa_ec::public_point(viewing_ec_seed)?;
     let (ek, kem_seed) = MlKem768::keygen(kem_seed)?;
     Ok(Scanner {
         kem_seed,
-        viewing_ec_seed: Some(viewing_ec_seed),
+        viewing_ec_seed: Some((*viewing_ec_seed).into()),
         ek,
         viewing_pk_ec: Some(viewing_pk_ec),
         spending,
@@ -121,7 +111,8 @@ fn scanner_from(viewing_key: &[u8], spending: CompressedPoint) -> Result<Scanner
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{MetaAddress, Tracking};
+    use crate::{Master, MetaAddress, Tracking};
+    use secrecy::ExposeSecret;
 
     struct Recipient {
         meta: MetaAddress,
@@ -134,7 +125,11 @@ mod tests {
 
     fn recipient(seed: &[u8]) -> Recipient {
         let (meta, master, tracking) = SchemeId3::keygen(seed).expect("valid seed");
-        let mut viewing_key = tracking.viewing_ec_seed.expect("schemeId 3").to_vec();
+        let mut viewing_key = tracking
+            .viewing_ec_seed
+            .as_ref()
+            .expect("schemeId 3")
+            .to_vec();
         viewing_key.extend_from_slice(&tracking.kem_seed);
         Recipient {
             meta_bytes: SchemeId3::meta_to_bytes(&meta),
@@ -178,10 +173,10 @@ mod tests {
             &address,
             &ephemeral_pub_key,
             &r.viewing_key,
-            &r.master.spending_seed,
+            r.master.spending_seed.as_slice(),
         )
         .expect("our payment");
-        let pk = pqsa_ec::public_point(&key).expect("a valid scalar");
+        let pk = pqsa_ec::public_point(key.expose_secret()).expect("a valid scalar");
         assert_eq!(pqsa_ec::address_of(&pk), address);
 
         // The same payment through the scheme's own interface, view tag included.
@@ -189,7 +184,10 @@ mod tests {
             .expect("well-formed");
         let scanner = SchemeId3::bind(&r.tracking, &r.meta).expect("matching keys");
         let m = SchemeId3::scan(&scanner, &ann).expect("the view tag and the address match");
-        assert_eq!(SchemeId3::spend_key(&r.master, &m), Ok(key));
+        assert_eq!(
+            SchemeId3::spend_key(&r.master, &m).unwrap().expose_secret(),
+            key.expose_secret()
+        );
     }
 
     #[test]
@@ -210,9 +208,10 @@ mod tests {
                 &address,
                 &ephemeral_pub_key,
                 &r.viewing_key,
-                &r.master.spending_seed
-            ),
-            Err(Error::MasterKeyMismatch)
+                r.master.spending_seed.as_slice()
+            )
+            .unwrap_err(),
+            Error::MasterKeyMismatch
         );
         // The intended recipient's keys see it.
         assert_eq!(
@@ -247,9 +246,10 @@ mod tests {
                 &other_address,
                 &ephemeral_pub_key,
                 &r.viewing_key,
-                &r.master.spending_seed
-            ),
-            Err(Error::MasterKeyMismatch),
+                r.master.spending_seed.as_slice()
+            )
+            .unwrap_err(),
+            Error::MasterKeyMismatch,
             "no key for an address these inputs do not pay"
         );
     }
@@ -286,8 +286,14 @@ mod tests {
                 field.first()
             );
             assert_eq!(
-                compute_stealth_key(&address, &field, &r.viewing_key, &r.master.spending_seed),
-                Err(Error::Malformed)
+                compute_stealth_key(
+                    &address,
+                    &field,
+                    &r.viewing_key,
+                    r.master.spending_seed.as_slice()
+                )
+                .unwrap_err(),
+                Error::Malformed
             );
         }
     }
@@ -315,15 +321,15 @@ mod tests {
                 "viewingKey {len} B"
             );
             assert_eq!(
-                compute(&bad, sk),
-                Err(Error::Malformed),
+                compute(&bad, sk).unwrap_err(),
+                Error::Malformed,
                 "viewingKey {len} B"
             );
         }
         for viewing_ec in [[0u8; 32], [0xff; 32]] {
             let bad = [viewing_ec.as_slice(), &vk[32..]].concat();
             assert_eq!(check(&bad, spk), Err(Error::NoValidScalar));
-            assert_eq!(compute(&bad, sk), Err(Error::NoValidScalar));
+            assert_eq!(compute(&bad, sk).unwrap_err(), Error::NoValidScalar);
         }
 
         let mut compact = spk.to_vec();
@@ -332,9 +338,9 @@ mod tests {
             assert_eq!(check(vk, bad), Err(Error::Malformed));
         }
 
-        assert_eq!(compute(vk, &sk[..31]), Err(Error::Malformed));
-        assert_eq!(compute(vk, &[0u8; 32]), Err(Error::NoValidScalar));
-        assert_eq!(compute(vk, &[0xff; 32]), Err(Error::NoValidScalar));
+        assert_eq!(compute(vk, &sk[..31]).unwrap_err(), Error::Malformed);
+        assert_eq!(compute(vk, &[0u8; 32]).unwrap_err(), Error::NoValidScalar);
+        assert_eq!(compute(vk, &[0xff; 32]).unwrap_err(), Error::NoValidScalar);
     }
 
     #[test]
@@ -368,7 +374,7 @@ mod tests {
         );
         let tracking = Tracking {
             viewing_ec_seed: r.tracking.viewing_ec_seed,
-            kem_seed: corrupted[32..].to_vec(),
+            kem_seed: corrupted[32..].to_vec().into(),
         };
         assert!(matches!(
             SchemeId3::bind(&tracking, &r.meta),

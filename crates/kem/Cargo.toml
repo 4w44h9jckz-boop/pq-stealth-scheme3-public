@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 pqsa-core.workspace = true
 ml-kem.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

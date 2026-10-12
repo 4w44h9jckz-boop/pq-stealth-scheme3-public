@@ -47,6 +47,19 @@ fn keygen_dz(case: &Value) -> Vec<u8> {
     dz
 }
 
+#[test]
+fn secret_types_zeroize_on_drop() {
+    fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+    fn assert_zeroize_on_drop_type<T: zeroize::ZeroizeOnDrop>() {}
+    assert_zeroize_on_drop_type::<<MlKem768Params as MlKemTrait>::DecapsulationKey>();
+    let (ek, seed) = MlKem768::keygen(&keygen_dz(&cases("keygen")[0])).unwrap();
+    let (ct, ss) = MlKem768::encapsulate(&ek, &[0x33; 32]).unwrap();
+    assert_zeroize_on_drop(&seed);
+    assert_zeroize_on_drop(&ss);
+    assert_zeroize_on_drop(&MlKem768::decapsulate(&seed, &ct).unwrap());
+    assert_zeroize_on_drop(&MlKem768::encapsulate_random(&ek).unwrap().1);
+}
+
 /// `KeyGen_internal(d, z)` for every vendored keyGen case; `ek` compared in full.
 #[test]
 fn acvp_keygen_matches_nist() {
@@ -57,8 +70,8 @@ fn acvp_keygen_matches_nist() {
         let (ek, dk_seed) =
             MlKem768::keygen(&dz).unwrap_or_else(|_| panic!("tcId {}", tc_id(case)));
         assert_eq!(
-            dk_seed,
-            dz,
+            dk_seed.as_slice(),
+            dz.as_slice(),
             "tcId {}: dk is the 64-byte seed, not expanded",
             tc_id(case)
         );
@@ -185,7 +198,7 @@ fn decapsulating_a_foreign_ciphertext_does_not_fail() {
     let recipient_ss = MlKem768::decapsulate(&theirs, &ct).unwrap();
     assert_eq!(recipient_ss, their_ss);
     assert_ne!(our_ss, their_ss);
-    assert_ne!(our_ss, [0u8; 32]);
+    assert_ne!(*our_ss, [0u8; 32]);
 }
 
 /// Wrong lengths are errors. A 2 400-byte expanded `dk` must not be taken as a seed.

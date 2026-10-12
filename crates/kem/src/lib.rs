@@ -9,6 +9,7 @@
 use ml_kem::kem::Kem as MlKemTrait;
 use ml_kem::{Decapsulate, KeyExport, MlKem768 as MlKem768Params, Seed};
 use pqsa_core::{Bytes32, Error};
+use zeroize::Zeroizing;
 
 /// KEM with seeded and random encapsulation. Sizes from FIPS 203 (`tools/derive_sizes.py`).
 pub trait Kem {
@@ -26,7 +27,7 @@ pub trait Kem {
     /// # Errors
     ///
     /// [`Error::Malformed`] if `seed` has the wrong length.
-    fn keygen(seed: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error>;
+    fn keygen(seed: &[u8]) -> Result<(Vec<u8>, Zeroizing<Vec<u8>>), Error>;
 
     /// `(ct, ss)` from `ek` and message `m` = `seed`. Deterministic.
     ///
@@ -34,7 +35,7 @@ pub trait Kem {
     ///
     /// [`Error::Malformed`] if `seed` has the wrong length; [`Error::Kem`] if `ek` fails
     /// ML-KEM's encapsulation-key checks.
-    fn encapsulate(ek: &[u8], seed: &[u8]) -> Result<(Vec<u8>, Bytes32), Error>;
+    fn encapsulate(ek: &[u8], seed: &[u8]) -> Result<(Vec<u8>, Zeroizing<Bytes32>), Error>;
 
     /// `ML-KEM.Encaps(ek)`: [`Self::encapsulate`] with `m` from the operating system's CSPRNG.
     /// The sender's encapsulation. §2.4.
@@ -43,8 +44,8 @@ pub trait Kem {
     ///
     /// [`Error::Rng`] if the operating system's RNG fails; [`Error::Kem`] if `ek` fails
     /// ML-KEM's encapsulation-key checks.
-    fn encapsulate_random(ek: &[u8]) -> Result<(Vec<u8>, Bytes32), Error> {
-        let mut m = vec![0u8; Self::ENCAP_SEED_BYTES];
+    fn encapsulate_random(ek: &[u8]) -> Result<(Vec<u8>, Zeroizing<Bytes32>), Error> {
+        let mut m = Zeroizing::new(vec![0u8; Self::ENCAP_SEED_BYTES]);
         pqsa_core::os_random(&mut m)?;
         Self::encapsulate(ek, &m)
     }
@@ -58,7 +59,7 @@ pub trait Kem {
     ///
     /// [`Error::Malformed`] if `dk_seed` has the wrong length; [`Error::Kem`] if `ct` has the
     /// wrong length.
-    fn decapsulate(dk_seed: &[u8], ct: &[u8]) -> Result<Bytes32, Error>;
+    fn decapsulate(dk_seed: &[u8], ct: &[u8]) -> Result<Zeroizing<Bytes32>, Error>;
 }
 
 /// ML-KEM-768 as in FIPS 203.
@@ -71,40 +72,38 @@ impl Kem for MlKem768 {
     const ENCAP_SEED_BYTES: usize = 32;
 
     /// Returns `(ek, dk_seed)` with `dk_seed` the 64-byte input, not the expanded key.
-    fn keygen(seed: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Error> {
-        let dz: [u8; 64] = seed.try_into().map_err(|_| Error::Malformed)?;
-        let dk = <MlKem768Params as MlKemTrait>::DecapsulationKey::from_seed(
-            Seed::try_from(dz.as_slice()).map_err(|_| Error::Malformed)?,
-        );
+    fn keygen(seed: &[u8]) -> Result<(Vec<u8>, Zeroizing<Vec<u8>>), Error> {
+        let dz = Zeroizing::new(Seed::try_from(seed).map_err(|_| Error::Malformed)?);
+        let dk = <MlKem768Params as MlKemTrait>::DecapsulationKey::from_seed(*dz);
         let ek = dk.encapsulation_key().to_bytes().to_vec();
         debug_assert_eq!(ek.len(), Self::EK_BYTES);
-        Ok((ek, dz.to_vec()))
+        Ok((ek, Zeroizing::new(dz.to_vec())))
     }
 
-    fn encapsulate(ek: &[u8], seed: &[u8]) -> Result<(Vec<u8>, Bytes32), Error> {
-        let m: [u8; 32] = seed.try_into().map_err(|_| Error::Malformed)?;
-        // `new` rejects a malformed ek.
+    fn encapsulate(ek: &[u8], seed: &[u8]) -> Result<(Vec<u8>, Zeroizing<Bytes32>), Error> {
+        let m = Zeroizing::new(ml_kem::B32::try_from(seed).map_err(|_| Error::Malformed)?);
         let key = ml_kem::Key::<<MlKem768Params as MlKemTrait>::EncapsulationKey>::try_from(ek)
             .map_err(|_| Error::Kem)?;
         let ek =
             <MlKem768Params as MlKemTrait>::EncapsulationKey::new(&key).map_err(|_| Error::Kem)?;
-        let (ct, ss) = ek.encapsulate_deterministic(&m.into());
+        let (ct, ss) = ek.encapsulate_deterministic(&m);
+        let ss = Zeroizing::new(ss);
         debug_assert_eq!(ct.len(), Self::CT_BYTES);
         Ok((
             ct.to_vec(),
-            ss.as_slice().try_into().map_err(|_| Error::Kem)?,
+            Zeroizing::new(ss.as_slice().try_into().map_err(|_| Error::Kem)?),
         ))
     }
 
-    fn decapsulate(dk_seed: &[u8], ct: &[u8]) -> Result<Bytes32, Error> {
-        let dz: [u8; 64] = dk_seed.try_into().map_err(|_| Error::Malformed)?;
+    fn decapsulate(dk_seed: &[u8], ct: &[u8]) -> Result<Zeroizing<Bytes32>, Error> {
+        let dz = Zeroizing::new(Seed::try_from(dk_seed).map_err(|_| Error::Malformed)?);
         let ct = ml_kem::Ciphertext::<MlKem768Params>::try_from(ct).map_err(|_| Error::Kem)?;
-        let dk = <MlKem768Params as MlKemTrait>::DecapsulationKey::from_seed(
-            Seed::try_from(dz.as_slice()).map_err(|_| Error::Malformed)?,
-        );
+        let dk = <MlKem768Params as MlKemTrait>::DecapsulationKey::from_seed(*dz);
         // Implicit rejection: a foreign well-formed ciphertext returns a pseudorandom secret.
-        let ss = dk.decapsulate(&ct);
-        ss.as_slice().try_into().map_err(|_| Error::Kem)
+        let ss = Zeroizing::new(dk.decapsulate(&ct));
+        Ok(Zeroizing::new(
+            ss.as_slice().try_into().map_err(|_| Error::Kem)?,
+        ))
     }
 }
 
