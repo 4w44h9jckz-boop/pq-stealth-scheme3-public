@@ -177,7 +177,7 @@ sender    : esk, epk    <- a fresh secp256k1 key pair                         (2
             (ct, ss_pq) <- ML-KEM-768.Encaps(ek)
             ss          <- hybrid_combine(DS, ECDH(esk, viewing_pk_ec).x, ss_pq,
                                           epk, ct, viewing_pk_ec, ek)
-            announce(3, address(stealth_pk), epk, view_tag(ss) || ct); pay the address
+            announce(3, address(stealth_pk), epk || ct, view_tag(ss)); pay the address
 scanner   : ss_ec <- ECDH(viewing_ec, epk).x;  ss_pq <- ML-KEM-768.Decaps(dk, ct)
             ss    <- the same hybrid_combine call; compare the view tag, then the address
 recipient : stealth_sk = (spending_sk + H(ss)) mod n
