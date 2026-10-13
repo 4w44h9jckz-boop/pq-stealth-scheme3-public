@@ -19,6 +19,7 @@
 
 use sha3::Shake256;
 use sha3::digest::{ExtendableOutput, Update, XofReader};
+use zeroize::Zeroizing;
 
 /// 32-byte array (seed, scalar, shared secret, or hash).
 pub type Bytes32 = [u8; 32];
@@ -240,7 +241,7 @@ pub fn keygen_seed(
     scheme_name: &[u8],
     j: u64,
     length: usize,
-) -> Result<Vec<u8>, Error> {
+) -> Result<Zeroizing<Vec<u8>>, Error> {
     if master.len() != 32 || length == 0 || length > 255 * 32 {
         return Err(Error::Malformed);
     }
@@ -253,7 +254,7 @@ pub fn keygen_seed(
 
     // RFC 5869 absent salt = HashLen zeros. `None` and `Some(&[0u8; 32])` agree; a test pins it.
     let hk = hkdf::Hkdf::<sha2::Sha256>::new(None, master);
-    let mut out = vec![0u8; length];
+    let mut out = Zeroizing::new(vec![0u8; length]);
     hk.expand(&info, &mut out).map_err(|_| Error::Malformed)?;
     Ok(out)
 }
@@ -267,7 +268,7 @@ pub fn keygen_seed(
 /// address. [`StealthScheme::announce`] still accepts any `&[u8]`. Two `SenderState` values
 /// resumed at the same counter also collide.
 pub struct SenderState {
-    _master: Bytes32,
+    _master: Zeroizing<Bytes32>,
     _counter: u64,
 }
 
@@ -278,9 +279,9 @@ impl SenderState {
     /// index after restart repeats a seed. There is no `new()`: a fresh sender is
     /// `resume(master, 0)`.
     #[must_use]
-    pub fn resume(master: Bytes32, counter: u64) -> Self {
+    pub fn resume(master: &Bytes32, counter: u64) -> Self {
         Self {
-            _master: master,
+            _master: Zeroizing::new(*master),
             _counter: counter,
         }
     }
@@ -299,7 +300,7 @@ impl SenderState {
     /// # Errors
     ///
     /// [`Error::CounterExhausted`] if the index would wrap.
-    pub fn draw_seed<S: StealthScheme>(&mut self) -> Result<Vec<u8>, Error> {
+    pub fn draw_seed<S: StealthScheme>(&mut self) -> Result<Zeroizing<Vec<u8>>, Error> {
         self.draw(S::SCHEME_ID, S::NAME, S::ANNOUNCE_SEED_BYTES)
     }
 
@@ -337,7 +338,12 @@ impl SenderState {
     }
 
     /// Counter-advancing draw without a [`StealthScheme`] bound (tests and [`Self::draw_seed_untyped`]).
-    fn draw(&mut self, scheme_id: u64, scheme_name: &str, n: usize) -> Result<Vec<u8>, Error> {
+    fn draw(
+        &mut self,
+        scheme_id: u64,
+        scheme_name: &str,
+        n: usize,
+    ) -> Result<Zeroizing<Vec<u8>>, Error> {
         let i = self._counter;
         // Do not wrap: a wrapped counter reuses index 0.
         self._counter = i.checked_add(1).ok_or(Error::CounterExhausted)?;
@@ -361,12 +367,12 @@ impl SenderState {
         scheme_id: u64,
         scheme_name: &str,
         n: usize,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<Zeroizing<Vec<u8>>, Error> {
         self.draw(scheme_id, scheme_name, n)
     }
 
     #[cfg(test)]
-    fn draw_seed_for(&mut self, scheme_id: u64, scheme_name: &str, n: usize) -> Vec<u8> {
+    fn draw_seed_for(&mut self, scheme_id: u64, scheme_name: &str, n: usize) -> Zeroizing<Vec<u8>> {
         self.draw(scheme_id, scheme_name, n)
             .expect("the counter is not exhausted")
     }
@@ -419,21 +425,19 @@ fn announce_seed(
     scheme_name: &[u8],
     i: u64,
     n: usize,
-) -> Vec<u8> {
+) -> Zeroizing<Vec<u8>> {
     let kem_id = kem_id(KEM_NAME);
-    let mut input =
-        Vec::with_capacity(DS_SENDER.len() + 32 + 8 * 4 + scheme_name.len() + kem_id.len());
-    input.extend_from_slice(DS_SENDER);
-    input.extend_from_slice(master);
-    input.extend_from_slice(&i.to_be_bytes());
-    input.extend_from_slice(&scheme_id.to_be_bytes());
-    input.extend_from_slice(&(scheme_name.len() as u64).to_be_bytes());
-    input.extend_from_slice(scheme_name);
-    input.extend_from_slice(&(kem_id.len() as u64).to_be_bytes());
-    input.extend_from_slice(&kem_id);
-    let mut out = vec![0u8; n];
-    let mut reader =
-        <Shake256 as ExtendableOutput>::finalize_xof(Shake256::default().chain(&input));
+    let mut h = Shake256::default();
+    h.update(DS_SENDER);
+    h.update(master);
+    h.update(&i.to_be_bytes());
+    h.update(&scheme_id.to_be_bytes());
+    h.update(&(scheme_name.len() as u64).to_be_bytes());
+    h.update(scheme_name);
+    h.update(&(kem_id.len() as u64).to_be_bytes());
+    h.update(&kem_id);
+    let mut out = Zeroizing::new(vec![0u8; n]);
+    let mut reader = h.finalize_xof();
     reader.read(&mut out);
     out
 }
@@ -451,6 +455,15 @@ fn kem_id(name: &[u8]) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn seed_types_zeroize_on_drop() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>(_: &T) {}
+        let mut sender = SenderState::resume(&[0x5a; 32], 0);
+        assert_zeroize_on_drop(&sender._master);
+        assert_zeroize_on_drop(&sender.draw_seed_untyped(3, "test", 64).unwrap());
+        assert_zeroize_on_drop(&keygen_seed(&[0x5a; 32], 3, b"test", 0, 128).unwrap());
+    }
+
     /// Stand-in so the derivation can be tested without a scheme crate. `NAME` is bound in.
     ///
     /// **`keygen_seed` / `announce_seed` are not in the ERC.** §2.1 and §2.4 state requirements
@@ -464,7 +477,7 @@ mod tests {
         const ANNOUNCE_SEED_BYTES: usize = 32;
     }
 
-    fn seed(scheme_id: u64, scheme_name: &str, i: u64, n: usize) -> Vec<u8> {
+    fn seed(scheme_id: u64, scheme_name: &str, i: u64, n: usize) -> Zeroizing<Vec<u8>> {
         let master: Bytes32 = [0xA5; 32];
         announce_seed(&master, scheme_id, scheme_name.as_bytes(), i, n)
     }
@@ -547,7 +560,7 @@ mod tests {
     /// `resume` takes the next unused index; drawing consumes it.
     #[test]
     fn the_counter_is_next_unused() {
-        let mut st = SenderState::resume([0xA5; 32], 0);
+        let mut st = SenderState::resume(&[0xA5; 32], 0);
         assert_eq!(st.counter(), 0);
         let first = st.draw_seed_for(SeedFixture::SCHEME_ID, SeedFixture::NAME, 32);
         assert_eq!(st.counter(), 1, "drawing consumes the index it was given");
@@ -563,7 +576,7 @@ mod tests {
     /// Wrapping the counter would reuse index 0. [`Error::CounterExhausted`] is the stop.
     #[test]
     fn draw_at_u64_max_is_counter_exhausted() {
-        let mut st = SenderState::resume([0xA5; 32], u64::MAX);
+        let mut st = SenderState::resume(&[0xA5; 32], u64::MAX);
         assert_eq!(st.counter(), u64::MAX);
         assert!(matches!(
             st.draw_seed_untyped(
@@ -643,7 +656,7 @@ mod tests {
             }
         }
 
-        let mut state = SenderState::resume([0x11; 32], 0);
+        let mut state = SenderState::resume(&[0x11; 32], 0);
         let mut seen: Vec<Vec<u8>> = Vec::new();
         let out = state.announce_retrying::<Fake, _, _>(4, |seed| {
             seen.push(seed.to_vec());
@@ -664,7 +677,7 @@ mod tests {
         );
 
         // Non-rejection errors are not retried.
-        let mut state = SenderState::resume([0x11; 32], 0);
+        let mut state = SenderState::resume(&[0x11; 32], 0);
         let mut calls = 0;
         let out = state.announce_retrying::<Fake, usize, _>(4, |_| {
             calls += 1;
@@ -674,7 +687,7 @@ mod tests {
         assert_eq!(calls, 1, "a non-rejection error is not retried");
 
         // Exhausting tries reports SeedRejected.
-        let mut state = SenderState::resume([0x11; 32], 0);
+        let mut state = SenderState::resume(&[0x11; 32], 0);
         let out = state.announce_retrying::<Fake, usize, _>(2, |_| Err(Error::SeedRejected));
         assert_eq!(out, Err(Error::SeedRejected));
         assert_eq!(state.counter(), 2, "and it drew a fresh index for each try");
@@ -783,7 +796,7 @@ mod tests {
             hk.expand(&info, &mut out).unwrap();
             out
         };
-        assert_eq!(info_free, explicit);
+        assert_eq!(info_free.as_slice(), explicit.as_slice());
     }
 
     /// `L = 0`, `L > 255*32`, and a master other than 32 bytes are `Malformed`.

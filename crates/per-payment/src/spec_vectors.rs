@@ -129,8 +129,8 @@ fn point(bytes: &[u8]) -> pqsa_ec::CompressedPoint {
     pqsa_ec::decode_point(bytes).expect("fixture point is SEC1 compressed")
 }
 
-fn encode(bytes: &[u8]) -> String {
-    hex::encode(bytes)
+fn encode<T: AsRef<[u8]> + ?Sized>(bytes: &T) -> String {
+    hex::encode(bytes.as_ref())
 }
 
 fn sha256(parts: &[&[u8]]) -> Bytes32 {
@@ -167,7 +167,7 @@ fn v3_09_check(stealth_address: &[u8; 20], ephemeral_pub_key: &[u8]) -> Result<b
     )
 }
 
-fn combine_parts(ds: &[u8], parts: &Value) -> Bytes32 {
+fn combine_parts(ds: &[u8], parts: &Value) -> Zeroizing<Bytes32> {
     combine_secrets(
         ds,
         &b32(parts, "ss_ec"),
@@ -190,7 +190,7 @@ fn vector_ids(doc: &Value) -> BTreeSet<&str> {
 }
 
 #[test]
-fn every_committed_vector_has_a_rust_case() {
+fn vector_ids_match_inventory() {
     assert_eq!(
         vector_ids(section_1()),
         SECTION_1_CASES.iter().copied().collect()
@@ -212,7 +212,7 @@ fn v1_01_offset_of_ss() {
     assert_eq!(encode(&base), s(expect, "base"));
     let (offset, _) = derive_from_shared_secret(&ss).expect("this base is in range");
     assert_eq!(encode(&offset), s(expect, "offset"));
-    assert_eq!(offset, base, "the offset is base itself");
+    assert_eq!(*offset, base, "the offset is base itself");
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn v1_02_digest_is_big_endian() {
     let v = row(section_1(), "V1-02");
     let given = obj(v, "given");
     let base = b32(given, "base");
-    let offset = check_offset(&base).expect("this base is already a valid scalar");
+    let offset = check_offset(base.into()).expect("this base is already a valid scalar");
     assert_eq!(encode(&offset), s(obj(v, "expect"), "offset_big_endian"));
     assert_ne!(
         encode(&offset),
@@ -234,7 +234,10 @@ fn v1_03_base_zero_fails() {
     let v = row(section_1(), "V1-03");
     let base = b32(obj(v, "given"), "base");
     assert_eq!(s(obj(v, "expect"), "outcome"), "fail");
-    assert!(matches!(check_offset(&base), Err(Error::NoValidScalar)));
+    assert!(matches!(
+        check_offset(base.into()),
+        Err(Error::NoValidScalar)
+    ));
     assert_eq!(s(obj(v, "wrong"), "offset"), encode(&[0u8; 32]));
 }
 
@@ -244,7 +247,7 @@ fn v1_04_base_n_fails() {
     let base = b32(obj(v, "given"), "base");
     assert_eq!(s(obj(v, "expect"), "outcome"), "fail");
     assert!(
-        matches!(check_offset(&base), Err(Error::NoValidScalar)),
+        matches!(check_offset(base.into()), Err(Error::NoValidScalar)),
         "n is not a valid scalar; a silent reduce-mod-n would yield 0"
     );
 }
@@ -253,9 +256,9 @@ fn v1_04_base_n_fails() {
 fn v1_05_n_minus_1_accepted() {
     let v = row(section_1(), "V1-05");
     let base = b32(obj(v, "given"), "base");
-    let offset = check_offset(&base).expect("n-1 is a valid scalar");
+    let offset = check_offset(base.into()).expect("n-1 is a valid scalar");
     assert_eq!(encode(&offset), s(obj(v, "expect"), "offset"));
-    assert_eq!(offset, base);
+    assert_eq!(*offset, base);
 }
 
 #[test]
@@ -393,14 +396,14 @@ fn v3_06_ikm_order() {
     let viewing = point(&hx(parts, "viewing_pk_ec"));
     assert_eq!(viewing, v3_09_point("viewing_pk_ec"));
     assert_eq!(pqsa_ec::public_point(&esk), Ok(point(&hx(parts, "epk"))));
-    assert_eq!(pqsa_ec::ecdh(&esk, &viewing), Ok(b32(parts, "ss_ec")));
+    assert_eq!(*pqsa_ec::ecdh(&esk, &viewing).unwrap(), b32(parts, "ss_ec"));
     let nist = acvp_case("encapsulation", u64_field(given, "acvp_encapsulation_tcId"));
     let (ek, m) = (hx(parts, "ek"), hx(given, "m"));
     assert_eq!(ek, hx(nist, "ek"));
     assert_eq!(m, hx(nist, "m"));
     let (ct, ss_pq) = MlKem768::encapsulate(&ek, &m).expect("NIST's ek");
     assert_eq!(ct, hx(parts, "ct"));
-    assert_eq!(ss_pq, b32(parts, "ss_pq"));
+    assert_eq!(*ss_pq, b32(parts, "ss_pq"));
 }
 
 #[test]
@@ -525,14 +528,15 @@ fn v3_08_wire_order() {
     let v = row(section_2(), "V3-08");
     let given = obj(v, "given");
     let expect = obj(v, "expect");
-    let ann = Announcement {
-        epk: Some(point(&hx(given, "epk"))),
-        ct: hx(given, "ct"),
-        view_tag: hx(given, "view_tag")
+    let ann = Announcement::new(
+        point(&hx(given, "epk")),
+        hx(given, "ct"),
+        hx(given, "view_tag")
             .try_into()
             .expect("view tag is VIEW_TAG_BYTES"),
-        stealth_address: [0u8; 20],
-    };
+        [0u8; 20],
+    )
+    .unwrap();
     let (_, epk_field, metadata) = SchemeId3::announcement_to_bytes(&ann);
     assert_eq!(encode(&epk_field), s(expect, "ephemeralPubKey"));
     assert_eq!(encode(&metadata), s(expect, "metadata"));
@@ -620,11 +624,7 @@ fn v3_09_keygen_matches_nist_ek() {
     assert_eq!(&blob[66..], ek.as_slice());
     assert_eq!(encode(meta.spending.as_bytes()), s(expect, "spending_pk"));
     assert_eq!(
-        encode(
-            meta.viewing_ec
-                .expect("schemeId 3 viewing point")
-                .as_bytes()
-        ),
+        encode(meta.viewing_ec.as_bytes()),
         s(expect, "viewing_pk_ec")
     );
 
@@ -866,19 +866,25 @@ fn v3_16_stealth_key_pair() {
     let spend = |spending_seed: Bytes32, stealth_address: [u8; 20]| {
         SchemeId3::spend_key(
             &Master {
-                spending_seed,
+                spending_seed: spending_seed.into(),
                 viewing_ec_seed: None,
-                kem_seed: Vec::new(),
+                kem_seed: Vec::new().into(),
             },
             &Match {
                 stealth_address,
-                shared_secret: ss,
+                shared_secret: ss.into(),
             },
         )
     };
     let stealth_sk = spend(spending_sk, stealth_address).expect("one key pair");
-    assert_eq!(encode(&stealth_sk), s(expect, "stealth_sk"));
-    assert_eq!(pqsa_ec::public_point(&stealth_sk), Ok(stealth));
+    assert_eq!(
+        encode(SchemeId3::spend_key_bytes(&stealth_sk)),
+        s(expect, "stealth_sk")
+    );
+    assert_eq!(
+        pqsa_ec::public_point(stealth_sk.expose_secret()),
+        Ok(stealth)
+    );
 
     // spending_sk + H(ss) passes n, so the reduction is mod n.
     let near_n = obj(expect, "near_n");
@@ -893,8 +899,14 @@ fn v3_16_stealth_key_pair() {
     assert_eq!(encode(stealth_near_n.as_bytes()), s(near_n, "stealth_pk"));
     let address_near_n = pqsa_ec::address_of(&stealth_near_n);
     let sk = spend(sk_near_n, address_near_n).expect("one key pair");
-    assert_eq!(encode(&sk), s(near_n, "stealth_sk"));
-    assert_eq!(pqsa_ec::public_point(&sk), Ok(stealth_near_n));
+    assert_eq!(
+        encode(SchemeId3::spend_key_bytes(&sk)),
+        s(near_n, "stealth_sk")
+    );
+    assert_eq!(
+        pqsa_ec::public_point(sk.expose_secret()),
+        Ok(stealth_near_n)
+    );
 
     let wrong = obj(v, "wrong");
     for key in ["multiplicative_stealth_pk", "ss_as_offset_stealth_pk"] {
@@ -905,7 +917,7 @@ fn v3_16_stealth_key_pair() {
         s(expect, "stealth_sk")
     );
     let reduced = b32(wrong, "near_n_reduced_mod_2_256");
-    assert_ne!(reduced, sk);
+    assert_ne!(&reduced, sk.expose_secret());
     let reduced_pk = pqsa_ec::public_point(&reduced).expect("a valid scalar, for another address");
     assert_ne!(pqsa_ec::address_of(&reduced_pk), address_near_n);
 }
@@ -933,7 +945,7 @@ fn v3_17_the_address_decides() {
     let ss_pq = b32(expect, "ss_pq");
     assert_eq!(ss_pq.as_slice(), hx(nist, "k"));
 
-    let epk = honest.epk.expect("schemeId 3");
+    let epk = honest.epk;
     let viewing_ec = b32(given, "viewing_ec");
     let viewing = point(&hx(given, "viewing_pk_ec"));
     assert_eq!(pqsa_ec::public_point(&viewing_ec), Ok(viewing));

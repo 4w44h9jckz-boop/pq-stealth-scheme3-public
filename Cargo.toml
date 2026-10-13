@@ -5,7 +5,7 @@
 # describes. The full reference implementation carries more, and a reader
 # holding only this tree should not infer their contents from anything here.
 #
-# **Eight direct external crates**, each the obvious choice rather than a survey result. The four
+# **Ten direct external crates**, each with a concrete role. The four
 # cryptographic ones:
 #
 #   * `k256`      secp256k1. The one the upstream reference uses, which matters because the
@@ -20,7 +20,8 @@
 #                 and the difference between them is ONE PADDING BYTE -- which is why §1 names
 #                 keccak256 and SHA3-256 separately and why a vector pins them apart.
 #
-# And the four others: `hkdf` (the wallet seed KDF), `getrandom` (the sender's CSPRNG), plus
+# The others: `hkdf` (the wallet seed KDF), `getrandom` (the sender's CSPRNG),
+# `zeroize` (owned secret buffers), `secrecy` (redacted spending-key export), plus
 # `hex` and `serde_json`, which
 # move fixture bytes in and out of the conformance JSON and touch no cryptography. **Those
 # two are declared for
@@ -70,9 +71,11 @@ publish = false
 # Pinned to the versions the upstream reference uses, so a divergence between the two
 # implementations cannot be a dependency-version difference.
 k256 = { version = "0.13", default-features = false, features = ["ecdh", "arithmetic"] }
-ml-kem = { version = "0.3.2", default-features = false, features = ["alloc"] }
+ml-kem = { version = "0.3.2", default-features = false, features = ["alloc", "zeroize"] }
 sha2 = { version = "0.10", default-features = false }
-sha3 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false, features = ["zeroize"] }
+zeroize = { version = "1.9", default-features = false, features = ["alloc"] }
+secrecy = { version = "0.10.3", default-features = false }
 # Keygen seed derivation from a master key (`pqsa_core::keygen_seed`), for wallets. It is not
 # part of the ERC, and the harness does not use it: the harness's keys come from a fixed seed.
 #

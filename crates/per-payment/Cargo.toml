@@ -13,6 +13,8 @@ pqsa-kem.workspace = true
 pqsa-ec.workspace = true
 sha2.workspace = true
 sha3.workspace = true
+zeroize.workspace = true
+secrecy.workspace = true
 
 [dev-dependencies]
 hex.workspace = true

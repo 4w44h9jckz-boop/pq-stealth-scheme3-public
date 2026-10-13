@@ -12,6 +12,7 @@ getrandom.workspace = true
 hkdf.workspace = true
 sha2.workspace = true
 sha3.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 hex.workspace = true
