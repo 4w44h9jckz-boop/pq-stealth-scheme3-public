@@ -101,9 +101,9 @@ fn scanner_from(viewing_key: &[u8], spending: CompressedPoint) -> Result<Scanner
     let (ek, kem_seed) = MlKem768::keygen(kem_seed)?;
     Ok(Scanner {
         kem_seed,
-        viewing_ec_seed: Some((*viewing_ec_seed).into()),
+        viewing_ec_seed: (*viewing_ec_seed).into(),
         ek,
-        viewing_pk_ec: Some(viewing_pk_ec),
+        viewing_pk_ec,
         spending,
     })
 }
