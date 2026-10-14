@@ -488,17 +488,13 @@ Determinism is only needed in the test vectors, to pin `ct`.
 
 ### Cost
 
-These figures are Prague figures. 
-They come from real transactions on a local anvil node with `--hardfork prague`, 
-and `gasUsed` is read from each receipt. 
-Both contracts run their canonical deployed runtime bytecode, 
-installed at their mainnet addresses 
-and pinned by hash in each benchmark's `measured.json`: 
+These are Prague figures: 
+the `gasUsed` of real transactions on a local node running the Prague hardfork. 
+Both contracts run their canonical deployed runtime bytecode at their mainnet addresses: 
 the ERC-5564 announcer at `0x55649E01B5Df198D18D95b5cc5051630cfD45564` 
 and the ERC-6538 registry at `0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538`. 
-The `schemeId` 3 rows use the real fixture
-announcement and meta-address, identified by `fixture.sha256` in `measured.json`. 
-`schemeId` 1 has no fixture, so its rows use constructed payloads of the same lengths with no zero byte.
+The `schemeId` 3 rows use a real announcement and meta-address. 
+The `schemeId` 1 rows use constructed payloads of the same lengths with no zero byte.
 
 **Announcement**, a standalone `announce()` call:
 
@@ -532,7 +528,7 @@ Storage writes make up most of this cost, and it is paid once per recipient.
 |---|---|---|---|---|
 | schemeId 3 | 69 330 | 21 000 | 21 000 | 111 330 |
 
-The run announces, funds the derived address, and spends from it with the derived key. 
+The measured payment announces, funds the derived address, and spends from it with the derived key. 
 A token payment adds the token transfer. 
 Unless the sender sponsors gas, it also needs a transaction that funds the stealth EOA, 
 which links addresses (Security Considerations).
@@ -571,9 +567,7 @@ and, where a mistake is likely, the wrong output it distinguishes.
 
 ML-KEM-768 values come from NIST's ACVP test data for FIPS 203, 
 and each row that uses one names its ACVP test case. 
-Every other value was computed from this document 
-by a generator in the reference implementation's repository 
-that shares no code with the implementation.
+Every other value follows from this document.
 
 Three conventions apply to the vectors:
 
@@ -608,33 +602,10 @@ V1-03  base     = 00000000000000000000000000000000000000000000000000000000000000
 
 ## Reference Implementation
 
-The reference implementation is a Rust workspace in the repository linked from the discussion thread. 
-Its `per-payment` crate implements this scheme on three others: 
-`kem` (ML-KEM-768, checked against NIST ACVP), 
-`ec` (secp256k1) 
-and `core` (the interface the scheme implements).
-It passes every vector above. 
-Its `erc5564` module provides the three methods of Section 2.8, 
-taking and returning the bytes that ERC-5564's signatures do.
-
-Its sender, `announce_random`, draws `esk` and ML-KEM's `m` from the operating system's CSPRNG,
-as Section 2.4 requires. 
-A second, seeded `announce` takes that randomness as input instead. 
-It exists so that the vectors, the demonstration and the gas harness are reproducible, 
-and it is not a sender for real payments. 
-The harness feeds it seeds from SHAKE256 over a fixed secret and a counter, 
-and takes its keys from a fixed 128-byte keygen seed. 
-The implementation also provides a keygen seed derivation from a master key with HKDF-SHA256. 
-It is one instance of the requirements in Section 2.1 
-and not part of the standard.
-
-The gas figures under Rationale come from three harnesses in the same repository: 
-one for the announcement, 
-one for the registration 
-and one for the whole payment. 
-Each commits its receipts as `measured.json`.
-
-The implementation has had no external cryptographic review.
+A reference implementation in Rust is linked from the discussion thread. 
+It implements Sections 1 and 2, including the methods of Section 2.8, 
+and passes every vector under Test Cases. 
+It has had no external cryptographic review.
 
 ## Security Considerations
 
