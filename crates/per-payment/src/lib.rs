@@ -134,11 +134,11 @@ pub struct Scanner {
     /// The delegated `(d, z)` pair. Decapsulation's input.
     kem_seed: Zeroizing<Vec<u8>>,
     /// Viewing scalar.
-    viewing_ec_seed: Option<Zeroizing<Bytes32>>,
+    viewing_ec_seed: Zeroizing<Bytes32>,
     /// The encapsulation key **recomputed from `kem_seed` and verified** against the registry.
     ek: Vec<u8>,
     /// Viewing point, derived once.
-    viewing_pk_ec: Option<CompressedPoint>,
+    viewing_pk_ec: CompressedPoint,
     /// The registry's spending point. Not delegated material; §2.5 needs it to derive.
     spending: CompressedPoint,
 }
@@ -347,9 +347,7 @@ fn payment_secret(
     epk: &CompressedPoint,
     ct: &[u8],
 ) -> Option<Zeroizing<Bytes32>> {
-    let viewing_ec_seed = scanner.viewing_ec_seed.as_ref()?;
-    let viewing_pk_ec = scanner.viewing_pk_ec?;
-    let ss_ec = pqsa_ec::ecdh(viewing_ec_seed, epk).ok()?;
+    let ss_ec = pqsa_ec::ecdh(&scanner.viewing_ec_seed, epk).ok()?;
     let ss_pq = MlKem768::decapsulate(&scanner.kem_seed, ct).ok()?;
     combine_secrets(
         DS_HYBRID,
@@ -357,7 +355,7 @@ fn payment_secret(
         &ss_pq,
         epk,
         ct,
-        &viewing_pk_ec,
+        &scanner.viewing_pk_ec,
         &scanner.ek,
     )
     .ok()
@@ -492,8 +490,8 @@ impl StealthScheme for SchemeId3 {
         Ok(Scanner {
             ek: verified_ek(&tracking.kem_seed, &meta.ek)?,
             kem_seed: tracking.kem_seed.clone(),
-            viewing_pk_ec: Some(viewing_pk_ec),
-            viewing_ec_seed: Some(viewing_ec_seed.clone()),
+            viewing_pk_ec,
+            viewing_ec_seed: viewing_ec_seed.clone(),
             spending: meta.spending,
         })
     }
