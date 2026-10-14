@@ -85,6 +85,8 @@ DS_HYBRID = b"pq-stealth/hybrid-payment/v1"
 # The recipient of V3-14 and V3-17, whose KEM key is an ACVP decapsulation case's. ACVP gives
 # that key only expanded, with no (d, z) behind it, so it cannot be a Section 2.1 tracking key;
 # the rows give ss_pq so that an implementation holding seeds can start there.
+# Names NIST's file, not a local copy, so a row read on its own says where `dk` is.
+ACVP_DK = "the expanded dk of NIST ACVP ML-KEM-encapDecap-FIPS203, decapsulation tcId {tc}"
 RECIPIENT_EXPANDED = ("V3-09's viewing key with the KEM key of ACVP decapsulation tcId {tc}. "
                       "ACVP gives that key only in expanded form, so an implementation that "
                       "holds keys as (d, z) seeds starts from the ss_pq given here")
@@ -540,8 +542,7 @@ def group_2(t1: dict) -> dict[str, dict]:
     v["V3-14"] = {"claim": "a view-tag mismatch is a skip -- and decapsulation does not fail",
                   "given": {"acvp_decapsulation_tcId": dc["tcId"],
                             "acvp_reason": dc["reason"],
-                            "dk": "ACVP decapsulation tcId "
-                                  f"{dc['tcId']}, vendored in vectors/tier1/",
+                            "dk": ACVP_DK.format(tc=dc["tcId"]),
                             "ek": hx(ek_88),
                             "ek_source": "dk[1152:2336] per FIPS 203's expanded key layout, "
                                          "checked against the H(ek) at dk[2336:2368]",
@@ -651,8 +652,7 @@ def group_2(t1: dict) -> dict[str, dict]:
                            "different stealthAddress is a skip",
                   "given": {"acvp_decapsulation_tcId": dv["tcId"],
                             "acvp_reason": dv["reason"],
-                            "dk": f"ACVP decapsulation tcId {dv['tcId']}, vendored in "
-                                  f"vectors/tier1/",
+                            "dk": ACVP_DK.format(tc=dv["tcId"]),
                             "ek": hx(ek_v),
                             "ek_source": "dk[1152:2336] per FIPS 203's expanded key layout, "
                                          "checked against the H(ek) at dk[2336:2368]",

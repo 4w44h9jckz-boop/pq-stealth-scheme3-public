@@ -75,6 +75,17 @@ viewing/ephemeral points are required `CompressedPoint` values; private `ek`/`ct
 have checked lengths and read-only `ek()`/`ct()` getters. Constructors check wire shape;
 ML-KEM key validation and implicit rejection remain in the KEM engine.
 
+## Randomness and key seeds
+
+`announce_random` is the sender: it draws `esk` and ML-KEM's `m` from the operating system's
+CSPRNG, as the spec's Section 2.4 requires. The seeded `announce` takes that randomness as input
+so the vectors, the demo and the gas harness are reproducible; it is not a sender for real
+payments. The harness feeds it seeds from SHAKE256 over a fixed secret and a counter, and takes
+its keys from a fixed 128-byte keygen seed.
+
+`keygen_seed` in `crates/core` derives a keygen seed from a 32-byte master key with HKDF-SHA256.
+It is one way to meet the spec's Section 2.1, not part of the standard.
+
 ## Kohaku Integration PoC
 
 [Kohaku-ts Plugin](https://github.com/0xakk0r0kamui/kohaku-sapq/tree/pqsa-scheme3/crates/pq-stealth-ts)
