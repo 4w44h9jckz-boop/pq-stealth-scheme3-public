@@ -70,6 +70,25 @@ pub enum Error {
     AddressMappingOpen,
 }
 
+impl core::fmt::Display for Error {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::Malformed => "malformed input",
+            Self::NoValidScalar => "invalid secp256k1 scalar",
+            Self::SpendingKeyDelegated => "spending key is present in the tracking key",
+            Self::CounterExhausted => "sender counter exhausted",
+            Self::Rng => "random number generation failed",
+            Self::Kem => "KEM operation failed",
+            Self::SeedRejected => "announce seed rejected",
+            Self::TrackingKeyMismatch => "tracking key does not match the meta-address",
+            Self::MasterKeyMismatch => "master key does not control the stealth address",
+            Self::AddressMappingOpen => "address mapping is unresolved",
+        })
+    }
+}
+
+impl core::error::Error for Error {}
+
 /// [`StealthScheme::keygen`] output: `(Meta, Master, Tracking)` in that order.
 pub type Keys<S> = (
     <S as StealthScheme>::Meta,
