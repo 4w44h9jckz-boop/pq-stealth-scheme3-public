@@ -441,6 +441,12 @@ def main() -> int:
     case("outside docs/, gas BEFORE a bad figure still catches it", rc, 1)
     rc, out = run_with_audit(real, "a table of 99 999 entries, nothing to do with fees.\n")
     case("and a figure with no gas nearby stays out of scope there", rc, 0)
+    # Plain 4-digit figures: the ERC drops the thousands space, so "1220 gas more" must
+    # still be read, while other 4-digit runs (ERC numbers, years) stay out of scope.
+    rc, out = run_with_audit(real, "the token form costs 9999 gas more.\n")
+    case("a plain 4-digit figure right before `gas` is still checked", rc, 1)
+    rc, out = run_with_audit(real, "EIP-7623 sets the calldata gas floor.\n")
+    case("but a 4-digit run not followed by `gas` is not a figure", rc, 0)
     # The author's line wrap must not hide the unit word: a wrapped sentence puts "gas"
     # one line from its figure, and a same-line window read the number and never the unit
     # — two live ring figures sat exactly there.

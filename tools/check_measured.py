@@ -425,7 +425,10 @@ def main(argv: list[str]) -> int:
             # space-grouped number -- "671 731" inside "3 671 731" -- and reports a figure that
             # does not appear in the document. Three of the first fourteen findings were that.
             in_docs = "/docs/" in str(doc).replace("\\", "/")
-            pattern_re = r"(?<![\d])(?<!\d )\b(\d{1,3}(?: \d{3})+|\d{5,})\b"
+            # A 4-digit run counts only right before the word `gas`: the ERC writes figures
+            # as plain digits ("1220 gas more"), and widening to every 4-digit run would
+            # sweep in ERC numbers and years.
+            pattern_re = r"(?<![\d])(?<!\d )\b(\d{1,3}(?: \d{3})+|\d{5,}|\d{4}(?= gas\b))\b"
             # The elision exemption below applies ONLY inside the GENERATED SPANS of the
             # transcript files — the fenced bodies that follow an `<!-- output-of: ... -->`
             # marker, which are exactly the bytes an example-checker re-runs and compares.
