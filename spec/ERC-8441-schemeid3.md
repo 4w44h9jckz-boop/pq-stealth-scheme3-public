@@ -17,7 +17,7 @@ requires: 5564, 6538
 This ERC specifies `schemeId` 3. Its payment secret combines a Module-Lattice-Based Key-Encapsulation Mechanism (ML-KEM) encapsulation, at parameter set ML-KEM-768, with a secp256k1 Elliptic-Curve Diffie-Hellman (ECDH) secret.
 As long as ML-KEM-768 holds, an adversary who later gains access to a quantum computer still cannot tell from the public announcement log who was the receiver.
 
-The scheme protects the announcement layer only. Spending stays vulnerable to quantum attacker.
+The scheme protects the announcement layer only. Spending stays vulnerable to a quantum attacker.
 Each stealth address is still an ordinary externally owned account (EOA) controlled by a secp256k1 key,
 and a quantum adversary can break those keys as it can break any EOA's.
 It uses the deployed ERC-5564 announcer and [ERC-6538](./eip-6538.md) registry as is,
@@ -46,7 +46,7 @@ hence the announcement layer can move to a post-quantum key-encapsulation mechan
 
 On the other hand, spending is a different problem with a later deadline,
 as theft needs the CRQC to exist while the funds are still in the account.
-Beside, moving accounts off secp256k1 may also need account or protocol changes that are not yet available.
+Besides, moving accounts off secp256k1 may also need account or protocol changes that are not yet available.
 Hence spending can stay on secp256k1 until a later and separate migration.
 
 The ECDH half yields no protection against a quantum adversary
@@ -68,8 +68,8 @@ Notation:
 - `u256be(b)` reads 32 bytes as an unsigned integer, most significant byte first.
 - `n` is the order of the secp256k1 group and `G` is its generator.
 A valid scalar is an integer `k` with `0 < k < n`.
-A 32-byte secret's `u256be` value must be a valid scalar.
-- Points use the compressed encoding of SEC1 (Standards for Efficient Cryptography 1: Elliptic Curve Cryptography): 33 bytes with tag `0x02` or `0x03`,
+A secp256k1 private scalar MUST be encoded as a 32-byte big-endian integer in this range.
+- Points use the compressed encoding of Standards for Efficient Cryptography 1 (SEC1): 33 bytes with tag `0x02` or `0x03`,
 whereas `uncompressed(P)` is the 65-byte SEC1 form `0x04 || x || y`.
 - `ECDH(k, P).x` is the 32-byte big-endian x-coordinate of `k·P`.
 - `SHA256` is SHA-256 as specified in Federal Information Processing Standard (FIPS) 180-4,
@@ -88,14 +88,14 @@ or `ML-KEM.Decaps_internal` on a `dk` expanded from `(d, z)`.
 Note that ML-KEM rejects implicitly:
 a well-formed ciphertext that was not intended for `dk` decapsulates to a pseudorandom value, not to an error.
 
-**Offset and view tag.** From the 32-byte payment secret `ss` of Section 1.1:
+**Offset and view tag.** From the 32-byte hybrid payment secret `ss` produced by the combiner in Section 1.1:
 
 ```
 base = SHA256("pq-stealth/offset/v1" || ss)
 if 0 < u256be(base) < n:  H(ss) = u256be(base)
 else:                     fail
 
-view_tag = SHA256("pq-stealth/view-tag/v1" || ss)[0..1]                       1 B
+view_tag(ss) = SHA256("pq-stealth/view-tag/v1" || ss)[0..1]                   1 B
 ```
 
 Sender and recipient MUST both run exactly this procedure.
@@ -108,9 +108,9 @@ test vectors reach the failure by supplying `base` directly (Test Cases).
 The stealth key pair and its address keep ERC-5564's structure:
 
 ```
-stealth_pk = spending_pk + H(ss)·G
-stealth_sk = (spending_sk + H(ss)) mod n
-address    = keccak256(uncompressed(stealth_pk)[1..65])[12..32]
+stealth_pk          = spending_pk + H(ss)·G
+stealth_sk          = (spending_sk + H(ss)) mod n
+address(stealth_pk) = keccak256(uncompressed(stealth_pk)[1..65])[12..32]
 ```
 
 These derivations differ from ERC-5564's `schemeId` 1 in four ways:
@@ -173,7 +173,7 @@ Spending stays secp256k1 ECDSA on an ordinary EOA,
 so it needs no new verifier and no consensus change.
 
 ```
-sender    : esk, epk    <- a fresh secp256k1 key pair                         (2.4)
+sender    : esk, epk    <- a fresh secp256k1 key pair                 (Section 2.4)
             (ct, ss_pq) <- ML-KEM-768.Encaps(ek)
             ss          <- hybrid_combine(DS, ECDH(esk, viewing_pk_ec).x, ss_pq,
                                           epk, ct, viewing_pk_ec, ek)
@@ -207,7 +207,7 @@ The three components MUST be generated independently of one another.
 Each MUST be either drawn from a cryptographically secure random number generator (CSPRNG)
 or derived from a master secret by a pseudorandom function (PRF) in a way that gives each component an independent output.
 In particular, a wallet MUST NOT use the spending key as the viewing key.
-The tracking key is meant to be handed to a scanning service, so it must not carry the spending key.
+The tracking key is meant to be handed to a scanning service, which is why it cannot be allowed to carry the spending key.
 Key generation MUST fail if `spending_seed` equals `viewing_ec_seed`, `d`, or `z`.
 
 Key generation has three outputs:
@@ -259,7 +259,7 @@ Freshness is per announcement, not per `schemeId`:
 it holds across recipients, across `schemeId`s, and across payments to the same recipient.
 Reusing `esk` repeats `epk`, which links the two announcements to one sender.
 Reusing both against the same recipient also repeats `ss`,
-and ends up the same stealth address, which merges two payments onto one key.
+and yields the same stealth address, which merges two payments onto one key.
 
 A sender MUST draw this randomness from a cryptographically secure random number generator.
 For `esk` it draws 32 bytes, and if they are not a valid scalar, discards them and draws again.
@@ -365,9 +365,11 @@ Per ERC-5564 our scheme also defines `generateStealthAddress`, `checkStealthAddr
 - `generateStealthAddress(stealthMetaAddress)` implements Section 2.4 and returns `address`,
   `epk || ct` as `ephemeralPubKey`, and `view_tag(ss)` as `viewTag`.
   `stealthMetaAddress` is the 1250-byte `meta` of Section 2.2.
-- `checkStealthAddress(stealthAddress, ephemeralPubKey, viewingKey, spendingPubKey)` implements Section 2.5.
-It takes no view tag, so it compares addresses only,
-and it returns `false` wherever Section 2.7 says skip.
+- `checkStealthAddress(stealthAddress, ephemeralPubKey, viewingKey, spendingPubKey)` derives the payment secret
+  and compares the derived address with `stealthAddress` (Section 2.5).
+  For well-formed caller keys, it returns `false` for malformed `ephemeralPubKey`,
+  an invalid offset or stealth public key, or an address mismatch.
+  It receives neither `schemeId` nor `metadata`; a scanner checks those separately.
 - `computeStealthKey(stealthAddress, ephemeralPubKey, viewingKey, spendingKey)` implements Section 2.6.
 - `viewingKey` is the 96-byte tracking key, from which `viewing_pk_ec` and `ek` are recomputed.
   `spendingPubKey` is `spending_pk`, and `spendingKey` is `spending_sk`.
@@ -472,7 +474,7 @@ ERC-5564 describes `ephemeralPubKey` as the ephemeral public key used by the sen
 An ML-KEM ciphertext is the sender's per-payment contribution to the shared secret, the KEM counterpart of an ephemeral public key.
 Putting `epk || ct` in `ephemeralPubKey` leaves `metadata` as ERC-5564 lays it out,
 so the token metadata convention and ERC-5564's method signatures apply unchanged.
-While putting `ct` in `metadata` instead would displace the token metadata
+Putting `ct` in `metadata` instead would displace the token metadata
 and would need extra method parameters to reach `ct`.
 
 ### Why the tracking key holds the seed `(d, z)`
@@ -556,7 +558,7 @@ The view tag is the first byte of `metadata`,
 which can carry ERC-5564's token metadata after it,
 and the methods of Section 2.8 have ERC-5564's signatures.
 Its `ephemeralPubKey` is 1121 bytes rather than one 33-byte point,
-so a tool that assumes the length of `schemeId` 1's must check upon `schemeId` first.
+so a tool that assumes `schemeId` 1 lengths has to branch on `schemeId` first.
 
 ## Test Cases
 
@@ -568,6 +570,9 @@ and, where a mistake is likely, the wrong output it distinguishes.
 |---|---|---|
 | [`vectors/section-1.json`](../assets/eip-8441/vectors/section-1.json) | 6 | Section 1: the offset, its range check, byte order and the view tag |
 | [`vectors/section-2.json`](../assets/eip-8441/vectors/section-2.json) | 23 | Section 2: keys and seeds, the meta-address and its encapsulation key check, the combiner and its bindings, the stealth key pair and its address, the wire mapping, and what counts as a skip |
+
+The `V3-` prefix identifies `schemeId` 3 vectors.
+`V1-06` was withdrawn when counter-based offset retries were removed; the remaining vector identifiers are retained.
 
 ML-KEM-768 values come from NIST's Automated Cryptographic Validation Protocol (ACVP) test data for FIPS 203,
 and each row that uses one names its ACVP test case.
@@ -604,13 +609,6 @@ V1-03  base     = 00000000000000000000000000000000000000000000000000000000000000
        H(ss)    fails
 ```
 
-## Reference Implementation
-
-A reference implementation in Rust is linked from the discussion thread.
-It implements Sections 1 and 2, including the methods of Section 2.8,
-and passes every vector under Test Cases.
-It has had no external cryptographic review.
-
 ## Security Considerations
 
 ### What this scheme protects, and what it does not
@@ -630,7 +628,7 @@ Whoever funds it is linked to it,
 so ERC-5564's discussion of recipients' transaction costs applies unchanged.
 - Timing and amounts can correlate payments.
 
-### KEM anonymity is required
+### KEM anonymity is assumed
 
 The ERC-6538 registry gives an adversary every candidate encapsulation key.
 If an ML-KEM-768 ciphertext revealed which `ek` it was intended for,
@@ -654,7 +652,7 @@ The view tag and `stealthAddress` are functions of `ss`.
 ### Against a quantum adversary
 
 A quantum adversary can compute `ss_ec` for every announcement and every registered viewing key,
-hence `ss`'s security relies entirely through `ss_pq`,
+hence `ss`'s security relies entirely on `ss_pq`,
 which relies on ML-KEM-768's IND-CCA security and the combiner of Section 1.1.
 Conversely, if ML-KEM-768 is broken classically, `ss_ec` keeps `ss` secret from a classical adversary.
 
@@ -675,7 +673,7 @@ A scanning service given the tracking key sees every payment to the recipient, w
 That includes every future payment until the recipient registers a new meta-address.
 A tracking key cannot be revoked, so ending a delegation means replacing `viewing_ec` and `(d, z)`.
 Before a CRQC it cannot spend them.
-Section 2.6 explains why a one-time key must never be disclosed to it,
+Section 2.6 explains why disclosing a one-time key to it is forbidden,
 and the previous subsection explains why the tracking key becomes a spending capability after a CRQC.
 
 ### One-time key and `ss`
@@ -696,8 +694,8 @@ A recipient registered under both `schemeId` 1 and `schemeId` 3
 can be paid under `schemeId` 1 by any sender,
 and that payment has no post-quantum announcement privacy.
 Section 2.3 is the mitigation:
-senders that implement `schemeId` 3 must prefer it,
-and recipients who need the protection should register only `schemeId` 3.
+it requires senders that implement `schemeId` 3 to prefer it,
+and recommends that recipients who need the protection register only `schemeId` 3.
 
 Scanners still find payments made under `schemeId` 1,
 including those made before a recipient already cleared that entry (Section 2.3),
