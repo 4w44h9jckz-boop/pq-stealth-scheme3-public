@@ -1,0 +1,6 @@
+name = "scheme3"
+version = "0.1.0"
+defaultTargets = ["Scheme3"]
+
+[[lean_lib]]
+name = "Scheme3"
