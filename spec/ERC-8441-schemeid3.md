@@ -714,7 +714,7 @@ Every malformed field is a skip (Section 2.7),
 so malformed input cannot halt a scan.
 ERC-5564's discussion of denial-of-service countermeasures applies.
 
-Measured with the reference implementation on one core of a 2.1 GHz server processor,
+Measured with a Rust implementation of this scheme on one core of a 2.1 GHz server processor,
 a `schemeId` 3 scan costs about 150 µs per announcement,
 or about 100 µs when the expanded `dk` is cached (Section 2.8).
 The single ECDH of `schemeId` 1 costs about 55 µs,
