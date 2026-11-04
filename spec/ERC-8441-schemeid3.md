@@ -247,9 +247,8 @@ with the recipient's keys for that `schemeId`.
 A recipient who clears a `schemeId` (below) SHOULD keep scanning it for payments made before the change.
 
 A sender that implements `schemeId` 3 and finds the recipient registered under it
-MUST NOT pay that recipient under a scheme without post-quantum announcement privacy, such as `schemeId` 1.
-It MAY use another scheme with post-quantum announcement privacy that the recipient is registered under.
-A recipient who wants post-quantum announcement privacy SHOULD NOT register under a scheme without it.
+MUST use `schemeId` 3, even if the recipient is also registered under another scheme such as `schemeId` 1.
+A recipient who wants post-quantum announcement privacy SHOULD register only `schemeId` 3.
 They SHOULD clear an existing `schemeId` 1 entry by registering an empty value under it,
 and a sender MUST treat an empty entry as unregistered.
 
@@ -695,8 +694,8 @@ A recipient registered under both `schemeId` 1 and `schemeId` 3
 can be paid under `schemeId` 1 by any sender,
 and that payment has no post-quantum announcement privacy.
 Section 2.3 is the mitigation:
-it forbids senders that implement `schemeId` 3 from paying such a recipient under `schemeId` 1,
-and recommends that recipients who need the protection do not register under `schemeId` 1.
+it requires senders that implement `schemeId` 3 to prefer it,
+and recommends that recipients who need the protection register only `schemeId` 3.
 
 Scanners still find payments made under `schemeId` 1,
 including those made before a recipient already cleared that entry (Section 2.3),
