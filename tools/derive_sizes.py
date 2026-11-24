@@ -231,6 +231,21 @@ def _alt_shape(kems: tuple[str, ...]) -> tuple[int, int, int, int, int, int]:
 ALT_SHAPES = {name: _alt_shape(kems) for name, (kems, _) in ALT_CONFIGS.items()}
 
 
+def _alt_combiner_input(kems: tuple[str, ...]) -> int:
+    """ss_ec || ss_pq... || epk || ct... || viewing_pk_ec || ek..., as §1.1's combiner."""
+    return (SCALAR + sum(ALT_KEM_SIZES[k][2] for k in kems) + SEC1_COMPRESSED
+            + sum(ALT_KEM_SIZES[k][1] for k in kems) + VIEWING_PK_EC
+            + sum(ALT_KEM_SIZES[k][0] for k in kems))
+
+
+# Bytes hashed per scanned announcement: as specified, and with `ek` bound by its 32-byte
+# SHA3-256 instead, computed once per scanner.
+ALT_COMBINER_INPUT = {
+    name: (_alt_combiner_input(kems), _alt_combiner_input(kems) - ALT_SHAPES[name][0] + SCALAR)
+    for name, (kems, _) in ALT_CONFIGS.items()
+}
+
+
 def main() -> int:
     bad: list[str] = []
 
@@ -334,6 +349,12 @@ def main() -> int:
     if ALT_SHAPES["ML-KEM-768 (today)"][2:5] != (META["schemeId 3"][1],
                                                *SHAPES["schemeId 3 announcement"]):
         bad.append("the ML-KEM-768 row of ALT_SHAPES is not schemeId 3's shape")
+    print("  combiner input per scanned announcement, and with ek bound by its hash")
+    for name, (full, hashed) in ALT_COMBINER_INPUT.items():
+        print(f"  {name:<24}{full:>7} B {hashed:>7} B")
+    today = 2 * SCALAR + 2 * SEC1_COMPRESSED + CT + EK
+    if ALT_COMBINER_INPUT["ML-KEM-768 (today)"][0] != today:
+        bad.append(f"the ML-KEM-768 combiner input is not §1.1's {today} B")
 
     print()
     if bad:

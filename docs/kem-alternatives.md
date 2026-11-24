@@ -16,7 +16,9 @@ parameters in `tools/derive_sizes.py`.
   The second is 86.8% of the most gas one transaction may use since Fusaka.
 - At category 5, FrodoKEM + HQC cannot be registered at all: its meta-address needs more gas
   than one transaction may use, and ERC-6538 registers a meta-address in one call.
-- Scanning cost is not measured yet. It is the open question; see below.
+- Scanning costs about 1249 µs per announcement on one core for FrodoKEM-976 + HQC-3 and
+  933 µs for FrodoKEM-976, against 85 µs for ML-KEM-768 measured the same way: 14.7x and
+  11.0x.
 
 ## Why look at this
 
@@ -87,7 +89,7 @@ What changes:
 - **The combiner input.** It grows from 2 402 B per announcement to about 45 KB for
   FrodoKEM-976 + HQC-3, because `ek` and `ct` are hashed on every scan. Binding
   `SHA3-256(ek)`, computed once per scanner, instead of `ek` itself would nearly halve it;
-  the ciphertexts still have to be hashed.
+  the ciphertexts still have to be hashed. In time that is 3 to 5% of a scan.
 - **Code.** This tree has no FrodoKEM or HQC implementation. `crates/kem` has a `Kem` trait
   that one would implement; `crates/per-payment` names `MlKem768` directly and would need
   to become generic over it.
@@ -170,7 +172,7 @@ headroom: a repricing that raised its cost by more than about 15% would put it o
 Registration, paid once per recipient, costs about 9.6 × 10⁻⁴ ETH today, 1.13 × 10⁻² ETH
 and 1.46 × 10⁻² ETH. Scale linearly with the base fee.
 
-## Scanning cost (not measured yet)
+## Scanning cost
 
 A scanner does the same work for every announcement, its own or not: ECDH, then
 decapsulation, then the combiner hash, and only then the view-tag check. The view tag is
@@ -178,12 +180,46 @@ derived from the combined `ss` on purpose: a tag computed from the ECDH secret a
 let a quantum attacker who breaks ECDH discard 255 of every 256 candidate recipients per
 announcement. So the KEM's decapsulation time multiplies directly into scan time.
 
-Today a scan costs about 150 µs per announcement (ERC-8441, Rust, one core of a 2.1 GHz
-server processor). FrodoKEM decapsulation recomputes the encryption, whose matrix is
-`n × n` with `n` from 640 to 1344. HQC decapsulates by decoding its code. Both are expected
-to be slower than ML-KEM, and the combiner input grows to tens of KB unless `ek` is bound by
-hash. This needs a measurement of both KEMs on the same machine as today's figure before
-choosing; liboqs's `speed_kem` covers ML-KEM-768, FrodoKEM and HQC (2025) in one binary.
+Projected per announcement, on one core of a 2.1 GHz Xeon with AES-NI and AVX2, by
+`tools/scan_projection.py`; the run is recorded in `docs/kem-alternatives-scan.json`.
+
+| configuration | decapsulation (µs) | scan (µs) | `ek` bound by hash (µs) | scan, FrodoKEM-SHAKE (µs) | vs today |
+|---|---|---|---|---|---|
+| ML-KEM-768 (today) | 15 | 85 | 82 | 85 | 1.0x |
+| FrodoKEM-640 | 385 | 497 | 475 | 786 | 5.9x |
+| FrodoKEM-640 + HQC-1 | 502 | 634 | 603 | 924 | 7.5x |
+| FrodoKEM-976 | 789 | 933 | 893 | 1517 | 11.0x |
+| FrodoKEM-976 + HQC-3 | 1074 | 1249 | 1202 | 1833 | 14.7x |
+| FrodoKEM-1344 | 1395 | 1570 | 1514 | 2677 | 18.5x |
+| FrodoKEM-1344 + HQC-5 | 1972 | 2214 | 2128 | 3320 | 26.1x |
+
+How the projection is built:
+
+- **ECDH, the combiner hash and the rest of the scan** are this tree's Rust, timed by
+  `crates/per-payment/examples/scan_timing.rs`. "The rest" (parsing, point decoding, the
+  view tag) is what today's measured scan costs beyond its ECDH, decapsulation and hash,
+  carried over unchanged.
+- **Decapsulation** is timed with the expanded secret key held in memory, which is how a
+  FrodoKEM scanner has to hold it. ML-KEM-768 and FrodoKEM come from liboqs 0.16.0, with
+  its AVX2 code. HQC comes from the HQC team's own AVX2 build (v5.1.0, which keeps the
+  2025-08-22 lengths), because liboqs 0.16.0 carries only HQC's portable reference code:
+  2907 µs for an HQC-1 decapsulation there against 117 µs here.
+- **Today's row is measured the same way**, so the ratios compare like with like. This
+  tree's own scan is slower, 165 µs, because it uses a different ML-KEM implementation and
+  re-expands the key from its 64-byte seed on every announcement; the ERC's "about 150 µs"
+  is that scan.
+- FrodoKEM's SHAKE instantiation is the column to use on hardware without AES instructions.
+
+What the numbers mean:
+
+- **FrodoKEM's decapsulation is most of the cost.** Binding `ek` by its hash saves 3 to 5%.
+- **A backlog of a million announcements** takes one core about 21 minutes with
+  FrodoKEM-976 + HQC-3 and about 16 with FrodoKEM-976, against under 3 minutes with this
+  tree today. Scanning parallelizes across cores and across announcements.
+- **Flooding a scanner costs the attacker no less than it does today.** An announcement
+  costs about 815 gas per microsecond of scanning it causes, today with the key held in
+  memory and with FrodoKEM-976 + HQC-3 alike.
+- **Not measured: phones and other ARM hardware.** These figures are one x86 server core.
 
 ## Recommendation
 
@@ -191,7 +227,8 @@ choosing; liboqs's `speed_kem` covers ML-KEM-768, FrodoKEM and HQC (2025) in one
    already covers a classical break of it.
 2. **If a hedge is wanted, define FrodoKEM-976 + HQC-3 as a separate scheme.** It matches
    today's category and rests on two unrelated post-quantum assumptions. It costs
-   1 016 650 gas per announcement, 1 058 650 per payment and 14 557 546 to register.
+   1 016 650 gas per announcement, 1 058 650 per payment and 14 557 546 to register, and
+   about 1249 µs of scanning per announcement.
 3. **FrodoKEM-976 alone** costs 657 390 per announcement and removes only the ring-structure
    concern. Choose it if plain LWE is a sufficient assumption for the hedge.
 4. **Do not plan on category 5 with both KEMs.** It cannot be registered on ERC-6538.
@@ -200,7 +237,7 @@ Before writing the scheme down:
 
 - Wait for FIPS 207. HQC's lengths have changed between rounds before, and this study uses
   the 2025-08-22 specification.
-- Measure scanning, as above.
+- Measure scanning on phones and other ARM hardware.
 - Choose implementations and test vectors. Both KEMs ship known-answer tests with their
   reference implementations, but neither has NIST ACVP vectors as ML-KEM does; for HQC
   those can only follow FIPS 207.
@@ -210,7 +247,16 @@ Before writing the scheme down:
 ```bash
 python3 tools/derive_sizes.py                    # the byte figures
 python3 harness/bench.py alternatives --check    # the gas figures, against a live Anvil
-python3 tools/check_measured.py                  # every figure in this file against both
+python3 tools/check_measured.py                  # every gas and byte figure in this file
+```
+
+The scan figures are timings of one machine and are re-run rather than re-checked. With
+liboqs 0.16.0 built with ML-KEM-768, FrodoKEM and HQC, and the HQC team's implementation
+(gitlab.com/pqc-hqc/hqc) built with `-DHQC_ARCH=x86_64 -DHQC_X86_IMPL=avx256`:
+
+```bash
+python3 tools/scan_projection.py --speed-kem <liboqs build>/tests/speed_kem \
+    --hqc-bench <hqc build>/tests/bench --hqc-version v5.1.0
 ```
 
 ## Sources

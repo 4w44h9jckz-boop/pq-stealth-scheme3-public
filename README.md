@@ -48,7 +48,7 @@ python3 tools/run_selftests.py
 python3 tools/gen_vectors.py --check
 ```
 
-`run_selftests.py` runs the three `tools/test-*.py` scripts (sizes, vector generator, snapshot and docs). `gen_vectors.py --check` regenerates `vectors/` and compares it to what is committed. `check_measured.py` is included in `run_selftests.py`.
+`run_selftests.py` runs the four `tools/test-*.py` scripts (sizes, vector generator, snapshot and docs, scan projection). `gen_vectors.py --check` regenerates `vectors/` and compares it to what is committed. `check_measured.py` is included in `run_selftests.py`.
 
 Gas, against a local Anvil node:
 

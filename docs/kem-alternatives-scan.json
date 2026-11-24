@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-24",
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores_used": 1,
+    "os": "Linux"
+  },
+  "rustc": "rustc 1.97.0 (2d8144b78 2026-07-07)",
+  "liboqs": "0.16.0",
+  "rust_scan_timing": {
+    "ecdh_us": 54.72700565487049,
+    "mlkem768_decapsulate_from_seed_us": 94.97768407723962,
+    "mlkem768_expand_seed_us": 41.99150846745976,
+    "scan_foreign_us": 164.90446043956044,
+    "scan_own_us": 239.74250878594248,
+    "sha3_256_us_by_length": {
+      "1250": 3.6311220043572985,
+      "14363": 37.713210910005024,
+      "15946": 40.65495487804878,
+      "19482": 48.67517229072031,
+      "21858": 55.16762247149687,
+      "2402": 6.402519367437096,
+      "24956": 64.49939746345657,
+      "26188": 69.13631105990783,
+      "31546": 80.44260107238605,
+      "36311": 92.60405771604938,
+      "43346": 111.25445828698552,
+      "45070": 111.54548178438662,
+      "65036": 178.502750743605,
+      "9898": 26.81539962459778
+    },
+    "view_tag_sha256_us": 0.10125682032048454
+  },
+  "cycles_per_us": 2099.9,
+  "liboqs_decaps_us": {
+    "FrodoKEM-1344-AES": 1395.39,
+    "FrodoKEM-1344-SHAKE": 2501.92,
+    "FrodoKEM-640-AES": 384.57,
+    "FrodoKEM-640-SHAKE": 674.24,
+    "FrodoKEM-976-AES": 788.81,
+    "FrodoKEM-976-SHAKE": 1373.28,
+    "HQC-1": 2907.07,
+    "HQC-3": 9107.73,
+    "HQC-5": 21283.36,
+    "ML-KEM-768": 14.74
+  },
+  "decaps": {
+    "FrodoKEM-1344-AES": {
+      "us": 1395.39,
+      "source": "liboqs 0.16.0 speed_kem"
+    },
+    "FrodoKEM-1344-SHAKE": {
+      "us": 2501.92,
+      "source": "liboqs 0.16.0 speed_kem"
+    },
+    "FrodoKEM-640-AES": {
+      "us": 384.57,
+      "source": "liboqs 0.16.0 speed_kem"
+    },
+    "FrodoKEM-640-SHAKE": {
+      "us": 674.24,
+      "source": "liboqs 0.16.0 speed_kem"
+    },
+    "FrodoKEM-976-AES": {
+      "us": 788.81,
+      "source": "liboqs 0.16.0 speed_kem"
+    },
+    "FrodoKEM-976-SHAKE": {
+      "us": 1373.28,
+      "source": "liboqs 0.16.0 speed_kem"
+    },
+    "HQC-1": {
+      "us": 117.0,
+      "source": "official HQC implementation v5.1.0, x86_64/avx256"
+    },
+    "HQC-3": {
+      "us": 284.81,
+      "source": "official HQC implementation v5.1.0, x86_64/avx256"
+    },
+    "HQC-5": {
+      "us": 576.5,
+      "source": "official HQC implementation v5.1.0, x86_64/avx256"
+    },
+    "ML-KEM-768": {
+      "us": 14.74,
+      "source": "liboqs 0.16.0 speed_kem"
+    }
+  },
+  "projection": [
+    {
+      "configuration": "ML-KEM-768 (today)",
+      "nist_category": 3,
+      "combiner_input_bytes": 2402,
+      "combiner_input_bytes_ek_hashed": 1250,
+      "scan_us_aes": 84.7,
+      "scan_us_aes_ek_hashed": 81.9,
+      "scan_us_shake": 84.7,
+      "scan_us_shake_ek_hashed": 81.9
+    },
+    {
+      "configuration": "FrodoKEM-640",
+      "nist_category": 1,
+      "combiner_input_bytes": 19482,
+      "combiner_input_bytes_ek_hashed": 9898,
+      "scan_us_aes": 496.8,
+      "scan_us_aes_ek_hashed": 474.9,
+      "scan_us_shake": 786.4,
+      "scan_us_shake_ek_hashed": 764.6
+    },
+    {
+      "configuration": "FrodoKEM-640 + HQC-1",
+      "nist_category": 1,
+      "combiner_input_bytes": 26188,
+      "combiner_input_bytes_ek_hashed": 14363,
+      "scan_us_aes": 634.2,
+      "scan_us_aes_ek_hashed": 602.8,
+      "scan_us_shake": 923.9,
+      "scan_us_shake_ek_hashed": 892.5
+    },
+    {
+      "configuration": "FrodoKEM-976",
+      "nist_category": 3,
+      "combiner_input_bytes": 31546,
+      "combiner_input_bytes_ek_hashed": 15946,
+      "scan_us_aes": 932.8,
+      "scan_us_aes_ek_hashed": 893.0,
+      "scan_us_shake": 1517.2,
+      "scan_us_shake_ek_hashed": 1477.5
+    },
+    {
+      "configuration": "FrodoKEM-976 + HQC-3",
+      "nist_category": 3,
+      "combiner_input_bytes": 45070,
+      "combiner_input_bytes_ek_hashed": 24956,
+      "scan_us_aes": 1248.7,
+      "scan_us_aes_ek_hashed": 1201.6,
+      "scan_us_shake": 1833.2,
+      "scan_us_shake_ek_hashed": 1786.1
+    },
+    {
+      "configuration": "FrodoKEM-1344",
+      "nist_category": 5,
+      "combiner_input_bytes": 43346,
+      "combiner_input_bytes_ek_hashed": 21858,
+      "scan_us_aes": 1570.2,
+      "scan_us_aes_ek_hashed": 1514.1,
+      "scan_us_shake": 2676.7,
+      "scan_us_shake_ek_hashed": 2620.6
+    },
+    {
+      "configuration": "FrodoKEM-1344 + HQC-5",
+      "nist_category": 5,
+      "combiner_input_bytes": 65036,
+      "combiner_input_bytes_ek_hashed": 36311,
+      "scan_us_aes": 2213.9,
+      "scan_us_aes_ek_hashed": 2128.0,
+      "scan_us_shake": 3320.4,
+      "scan_us_shake_ek_hashed": 3234.5
+    }
+  ]
+}
