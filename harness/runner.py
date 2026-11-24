@@ -133,7 +133,9 @@ def parse_arguments(argv: list[str] | None, *, targets: bool) -> argparse.Namesp
             "target",
             nargs="?",
             default="all",
-            choices=("all", "announcement", "registration", "payment"),
+            choices=(
+                "all", "announcement", "registration", "payment", "alternatives"
+            ),
         )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(

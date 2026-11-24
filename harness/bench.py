@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from harness.alternatives.measure import BENCHMARK as ALTERNATIVES
 from harness.announcement.measure import BENCHMARK as ANNOUNCEMENT
 from harness.payment.measure import BENCHMARK as PAYMENT
 from harness.registration.measure import BENCHMARK as REGISTRATION
@@ -18,7 +19,7 @@ from harness.runner import Context, execute, parse_arguments
 
 BENCHMARKS = {
     benchmark.name: benchmark
-    for benchmark in (ANNOUNCEMENT, REGISTRATION, PAYMENT)
+    for benchmark in (ANNOUNCEMENT, REGISTRATION, PAYMENT, ALTERNATIVES)
 }
 
 

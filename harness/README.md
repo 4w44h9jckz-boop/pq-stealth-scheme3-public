@@ -5,6 +5,7 @@ From Rust Scheme 3 fixture, using a fresh Prague Anvil, pinned ERC-5564 and ERC-
 - `announcement`: standalone ERC-5564 `announce()` calls
 - `registration`: first `registerKeys` on the canonical ERC-6538 registry
 - `payment`: announce, fund the stealth address, spend with the derived key
+- `alternatives`: the same three transactions and a first registration at the shapes of `docs/kem-alternatives.md`, with ML-KEM-768 replaced by FrodoKEM or by FrodoKEM and HQC. Constructed all-nonzero payloads, since this tree implements neither KEM, so its rows carry no fixture identity and no separate `upper_bound_gas`: each receipt already is that bound
 
 From the repository root:
 
@@ -15,7 +16,7 @@ python3 harness/bench.py all --update
 
 `--check` reruns every transaction and requires `measured.json` to match.
 `--update` rewrites those files. 
-Pass `announcement`, `registration`, or `payment` instead of `all` for one benchmark.
+Pass `announcement`, `registration`, `payment`, or `alternatives` instead of `all` for one benchmark.
 
 `measured.json` stores hardfork, contract identity, fixture identity, calldata length, zero-byte count, and `gasUsed`.
 Each row also carries `payload_zero_bytes` and `upper_bound_gas` -- what the same transaction would cost with no zero byte in its payload.

@@ -35,6 +35,7 @@ The specification is [ERC-8441](https://github.com/ethereum/ERCs/pull/2059), in 
 | `crates/per-payment` | the scheme itself, and ERC-5564's three methods for it (`erc5564`) |
 | `vectors/` | the fixtures saying what each row pins and which wrong output it distinguishes |
 | `harness/` | the gas harnesses: real transactions against a real node, with their receipts |
+| `docs/kem-alternatives.md` | a design study: sizes and measured gas if ML-KEM-768 is replaced by FrodoKEM, or by FrodoKEM and HQC |
 | `tools/` | fixture generation, size derivation, and offline snapshot/document checks |
 | `contracts/` | a readable ERC-5564 announcer source counterpart; the harness pins deployed runtime bytes |
 

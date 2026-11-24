@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "benchmark": "alternatives",
+  "environment": {
+    "hardfork": "prague",
+    "announcer_address": "0x55649E01B5Df198D18D95b5cc5051630cfD45564",
+    "announcer_code_sha256": "97b1a2b6e83d4d2d1184c28bfafe24df2463fcaec94e655b2b56ba5fc52a1b17",
+    "registry_address": "0x6538E6bf4B0eBd30A8Ea093027Ac2422ce5d6538",
+    "registry_code_sha256": "aacd1016938b107361de63f20c358350de9f78fa6033b7727853f0229c94b82f"
+  },
+  "placeholder_scheme_id": 255,
+  "results": [
+    {
+      "name": "mlkem768",
+      "configuration": "ML-KEM-768 (today)",
+      "scheme_id": 3,
+      "kind": "constructed_shape",
+      "kems": [
+        "ML-KEM-768"
+      ],
+      "nist_category": 3,
+      "ephemeral_pub_key_bytes": 1121,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 1250,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 1380,
+          "zero_bytes": 227,
+          "gas_used": 69390
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 1380,
+        "zero_bytes": 122,
+        "gas_used": 964809
+      },
+      "within_eip7825_cap": true
+    },
+    {
+      "name": "frodokem640",
+      "configuration": "FrodoKEM-640",
+      "scheme_id": null,
+      "kind": "constructed_shape",
+      "kems": [
+        "FrodoKEM-640"
+      ],
+      "nist_category": 1,
+      "ephemeral_pub_key_bytes": 9785,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 9682,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 10020,
+          "zero_bytes": 203,
+          "gas_used": 415710
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 9796,
+        "zero_bytes": 106,
+        "gas_used": 7003401
+      },
+      "within_eip7825_cap": true
+    },
+    {
+      "name": "frodokem640_hqc1",
+      "configuration": "FrodoKEM-640 + HQC-1",
+      "scheme_id": null,
+      "kind": "constructed_shape",
+      "kems": [
+        "FrodoKEM-640",
+        "HQC-1"
+      ],
+      "nist_category": 1,
+      "ephemeral_pub_key_bytes": 14218,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 11923,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 14468,
+          "zero_bytes": 218,
+          "gas_used": 593180
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 12036,
+        "zero_bytes": 105,
+        "gas_used": 8610638
+      },
+      "within_eip7825_cap": true
+    },
+    {
+      "name": "frodokem976",
+      "configuration": "FrodoKEM-976",
+      "scheme_id": null,
+      "kind": "constructed_shape",
+      "kems": [
+        "FrodoKEM-976"
+      ],
+      "nist_category": 3,
+      "ephemeral_pub_key_bytes": 15825,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 15698,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 16068,
+          "zero_bytes": 211,
+          "gas_used": 657390
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 15812,
+        "zero_bytes": 106,
+        "gas_used": 11319990
+      },
+      "within_eip7825_cap": true
+    },
+    {
+      "name": "frodokem976_hqc3",
+      "configuration": "FrodoKEM-976 + HQC-3",
+      "scheme_id": null,
+      "kind": "constructed_shape",
+      "kems": [
+        "FrodoKEM-976",
+        "HQC-3"
+      ],
+      "nist_category": 3,
+      "ephemeral_pub_key_bytes": 24803,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 20212,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 25060,
+          "zero_bytes": 225,
+          "gas_used": 1016650
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 20324,
+        "zero_bytes": 104,
+        "gas_used": 14557546
+      },
+      "within_eip7825_cap": true
+    },
+    {
+      "name": "frodokem1344",
+      "configuration": "FrodoKEM-1344",
+      "scheme_id": null,
+      "kind": "constructed_shape",
+      "kems": [
+        "FrodoKEM-1344"
+      ],
+      "nist_category": 5,
+      "ephemeral_pub_key_bytes": 21729,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 21586,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 21988,
+          "zero_bytes": 227,
+          "gas_used": 893710
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 21700,
+        "zero_bytes": 106,
+        "gas_used": 15544870
+      },
+      "within_eip7825_cap": true
+    },
+    {
+      "name": "frodokem1344_hqc5",
+      "configuration": "FrodoKEM-1344 + HQC-5",
+      "scheme_id": null,
+      "kind": "constructed_shape",
+      "kems": [
+        "FrodoKEM-1344",
+        "HQC-5"
+      ],
+      "nist_category": 5,
+      "ephemeral_pub_key_bytes": 36150,
+      "metadata_bytes": 1,
+      "meta_address_bytes": 28823,
+      "transactions": {
+        "announce": {
+          "calldata_bytes": 36388,
+          "zero_bytes": 206,
+          "gas_used": 1470340
+        },
+        "fund": {
+          "gas_used": 21000
+        },
+        "spend": {
+          "gas_used": 21000
+        }
+      },
+      "registration": {
+        "calldata_bytes": 28932,
+        "zero_bytes": 101,
+        "gas_used": 20734366
+      },
+      "within_eip7825_cap": false
+    }
+  ]
+}

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Re-derive this document's byte figures from FIPS 203 and from §3's wire rules.
 
+The alternative-KEM section near the end does the same for docs/kem-alternatives.md: FrodoKEM's
+and HQC's lengths from their parameters, and the shapes they give in schemeId 3's layout.
+
 **What it covers, and what it does not.** It checks the figures listed in its own tables:
 the announcement payloads and their field splits, the meta-addresses, the registration
 ratios, and the delegation component count. **It does not scan the documents for figures it
@@ -147,6 +150,86 @@ ZERO_BYTE_ODDS = 256
 # convention -- `harness/registration/measure.py`'s `blob()`. Checked below, not trusted.
 REGISTRATION_OVERSTATEMENT = {"1": 3, "3": 59}
 
+# ---- Alternative KEMs, for docs/kem-alternatives.md ----------------------------------
+# Not part of the specification. These are the shapes `harness/alternatives` measures if
+# ML-KEM-768 is replaced by FrodoKEM, or by FrodoKEM and HQC together, keeping the
+# secp256k1 half and the layout of schemeId 3. Same discipline as FIPS 203 above: each
+# length is computed from its specification's parameters and asserted against the length
+# that specification publishes.
+#
+# FrodoKEM, ISO preliminary standardization proposal (2023-03-14), the SALTED variant: a
+# registered `ek` is reused for every payment, and the unsalted eFrodoKEM is limited to
+# fewer than 2^8 ciphertexts per key. (n, D, len_salt bits, shared-secret bits, category);
+# nbar = mbar = 8, seedA = 128 bits.
+#   ek = seedA/8 + D*n*nbar/8        ct = (mbar*n*D + mbar*nbar*D)/8 + len_salt/8
+FRODO_NBAR = 8
+FRODO_SEED_A = 16
+FRODO_PARAMS = {
+    "FrodoKEM-640":  (640, 15, 256, 128, 1),
+    "FrodoKEM-976":  (976, 16, 384, 192, 3),
+    "FrodoKEM-1344": (1344, 16, 512, 256, 5),
+}
+FRODO_PUBLISHED = {            # (ek, ct, ss) bytes, from the proposal's parameter table
+    "FrodoKEM-640":  (9_616, 9_752, 16),
+    "FrodoKEM-976":  (15_632, 15_792, 24),
+    "FrodoKEM-1344": (21_520, 21_696, 32),
+}
+# HQC, specification of 2025-08-22 (the version NIST is drafting FIPS 207 from).
+# (n, n1, n2, category); ek = seed(32) || s, ct = u || v || salt(16), ss = 32.
+#   ek = 32 + ceil(n/8)              ct = ceil(n/8) + ceil(n1*n2/8) + 16
+HQC_SEED_EK = 32
+HQC_SALT = 16
+HQC_SS = 32
+HQC_PARAMS = {
+    "HQC-1": (17_669, 46, 384, 1),
+    "HQC-3": (35_851, 56, 640, 3),
+    "HQC-5": (57_637, 90, 640, 5),
+}
+HQC_PUBLISHED = {              # (ek, ct, ss) bytes, from the specification's parameter table
+    "HQC-1": (2_241, 4_433, 32),
+    "HQC-3": (4_514, 8_978, 32),
+    "HQC-5": (7_237, 14_421, 32),
+}
+
+
+def _frodo(n: int, d: int, salt_bits: int, ss_bits: int) -> tuple[int, int, int]:
+    ek = FRODO_SEED_A + d * n * FRODO_NBAR // 8
+    ct = (FRODO_NBAR * n * d + FRODO_NBAR * FRODO_NBAR * d) // 8 + salt_bits // 8
+    return ek, ct, ss_bits // 8
+
+
+def _hqc(n: int, n1: int, n2: int) -> tuple[int, int, int]:
+    vector = -(-n // 8)
+    return HQC_SEED_EK + vector, vector + -(-(n1 * n2) // 8) + HQC_SALT, HQC_SS
+
+
+ALT_KEM_SIZES = {name: _frodo(*params[:4]) for name, params in FRODO_PARAMS.items()}
+ALT_KEM_SIZES.update({name: _hqc(*params[:3]) for name, params in HQC_PARAMS.items()})
+ALT_KEM_SIZES["ML-KEM-768"] = (EK, CT, SCALAR)
+
+# Each configuration keeps schemeId 3's layout: meta-address = spending_pk || viewing_pk_ec
+# || ek..., ephemeralPubKey = epk || ct..., metadata = view_tag. (KEMs, NIST category.)
+ALT_CONFIGS = {
+    "ML-KEM-768 (today)":    (("ML-KEM-768",), 3),
+    "FrodoKEM-640":          (("FrodoKEM-640",), 1),
+    "FrodoKEM-640 + HQC-1":  (("FrodoKEM-640", "HQC-1"), 1),
+    "FrodoKEM-976":          (("FrodoKEM-976",), 3),
+    "FrodoKEM-976 + HQC-3":  (("FrodoKEM-976", "HQC-3"), 3),
+    "FrodoKEM-1344":         (("FrodoKEM-1344",), 5),
+    "FrodoKEM-1344 + HQC-5": (("FrodoKEM-1344", "HQC-5"), 5),
+}
+
+
+def _alt_shape(kems: tuple[str, ...]) -> tuple[int, int, int, int, int, int]:
+    ek = sum(ALT_KEM_SIZES[k][0] for k in kems)
+    ct = sum(ALT_KEM_SIZES[k][1] for k in kems)
+    return (ek, ct, SPENDING_PK + VIEWING_PK_EC + ek,
+            SEC1_COMPRESSED + ct, VIEW_TAG, SEC1_COMPRESSED + ct + VIEW_TAG)
+
+
+# (ek total, ct total, meta-address, ephemeralPubKey, metadata, announcement) bytes.
+ALT_SHAPES = {name: _alt_shape(kems) for name, (kems, _) in ALT_CONFIGS.items()}
+
 
 def main() -> int:
     bad: list[str] = []
@@ -237,13 +320,29 @@ def main() -> int:
     print(f"\ntracking key is ML-KEM's (d, z) seed pair at 64 B, not the expanded "
           f"decapsulation key at {DK_EXPANDED} B")
 
+    print("\nalternative KEMs (docs/kem-alternatives.md), from their parameters")
+    published = {**FRODO_PUBLISHED, **HQC_PUBLISHED}
+    for name, quoted in published.items():
+        derived = ALT_KEM_SIZES[name]
+        mark = "ok" if derived == quoted else "MISMATCH"
+        print(f"  {name:<14} (ek, ct, ss) = {derived}   published {quoted}   {mark}")
+        if derived != quoted:
+            bad.append(f"{name}: derived (ek, ct, ss) {derived} != published {quoted}")
+    print("  with secp256k1, in schemeId 3's layout: meta-address, ephemeralPubKey, metadata")
+    for name, (_, _, meta, epk_field, md, total) in ALT_SHAPES.items():
+        print(f"  {name:<24}{meta:>7} B {epk_field:>7} B {md:>3} B   announcement {total:>6} B")
+    if ALT_SHAPES["ML-KEM-768 (today)"][2:5] != (META["schemeId 3"][1],
+                                               *SHAPES["schemeId 3 announcement"]):
+        bad.append("the ML-KEM-768 row of ALT_SHAPES is not schemeId 3's shape")
+
     print()
     if bad:
         print(f"FAIL: {len(bad)} disagreement(s)")
         for b in bad:
             print("  " + b)
         return 1
-    print("OK: every figure listed above re-derives from FIPS 203 and from §3's wire rules.\n"
+    print("OK: every figure listed above re-derives from FIPS 203, from §3's wire rules, and for\n"
+          "    the alternative KEMs from their own specifications' parameters.\n"
           "    Coverage is what this file enumerates and no more -- it does NOT sweep the "
           "documents for\n    byte figures it has not been told about. A figure nobody adds "
           "here is a figure nobody checks.")

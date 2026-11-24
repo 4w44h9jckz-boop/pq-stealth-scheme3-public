@@ -176,6 +176,25 @@ def main() -> int:
     case("and it moves the ciphertext, which every payload is built on",
          "1088" in out, True)
 
+    print("\nthe alternative KEMs -- parameters against published lengths")
+    # docs/kem-alternatives.md quotes these and harness/alternatives measures them, so the
+    # same derived-not-copied rule holds: a parameter or a published length that moves alone
+    # must fail, and name the KEM.
+    rc, out = run(('"FrodoKEM-976":  (15_632, 15_792, 24)', '"FrodoKEM-976":  (15_632, 15_744, 24)'))
+    case("an unsalted FrodoKEM ciphertext quoted as the published one exits 1", rc, 1)
+    case("and names the KEM and both triples",
+         "FrodoKEM-976: derived (ek, ct, ss) (15632, 15792, 24) != published "
+         "(15632, 15744, 24)" in out, True)
+
+    rc, out = run(('"HQC-3": (35_851, 56, 640, 3)', '"HQC-3": (35_851, 56, 384, 3)'))
+    case("changing an HQC code parameter exits 1", rc, 1)
+    case("and names the KEM", "HQC-3: derived" in out, True)
+
+    rc, out = run(("HQC_SALT = 16", "HQC_SALT = 64"))
+    case("a wrong salt width exits 1 against the 2025 lengths", rc, 1)
+    case("and moves every HQC ciphertext", all(f"HQC-{level}: derived" in out
+                                                 for level in (1, 3, 5)), True)
+
     print()
     if FAILED:
         print(f"FAIL: {len(FAILED)} case(s): {', '.join(FAILED)}")
